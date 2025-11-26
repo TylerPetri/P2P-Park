@@ -48,3 +48,11 @@ type PointsSnapshot struct {
 	Points   int64  `json:"points"`
 	Version  uint64 `json:"version"`
 }
+
+// SignedPointsSnapshot wraps a PointsSnapshot with an ed25519 signature.
+// PubKey and Signature are []byte; JSON will base64-encode them.
+type SignedPointsSnapshot struct {
+	Snapshot  PointsSnapshot `json:"snapshot"`
+	PubKey    []byte         `json:"pub_key"`
+	Signature []byte         `json:"sig"`
+}

@@ -9,3 +9,9 @@ func MustMarshal(v any) json.RawMessage {
 	}
 	return b
 }
+
+// EncodeSnapshotCanonical encodes a PointsSnapshot in a canonical way
+// so signing/verifying uses the exact same bytes.
+func EncodeSnapshotCanonical(s PointsSnapshot) ([]byte, error) {
+	return json.Marshal(s)
+}

@@ -60,9 +60,10 @@ func main() {
 	fmt.Println("	/quit		- exit")
 	fmt.Println()
 
-	pointsEngine := points.NewEngine(n.ID(), *name)
+	id := n.Identity()
+	pointsEngine := points.NewEngine(n.ID(), *name, id.Priv, id.Pub)
 
-	broadcastSelfScore := func(snap proto.PointsSnapshot) {
+	broadcastSelfScore := func(snap proto.SignedPointsSnapshot) {
 		body, _ := json.Marshal(snap)
 		n.Broadcast(proto.Gossip{
 			Channel: "points",
@@ -70,7 +71,11 @@ func main() {
 		})
 	}
 
-	broadcastSelfScore(pointsEngine.SnapshotSelf())
+	if snap, err := pointsEngine.SnapshotSelf(); err != nil {
+		broadcastSelfScore(snap)
+	} else {
+		fmt.Printf("failed to sign initial snapshot: %v\n", err)
+	}
 
 	// Reader for stdin.
 	go func() {
@@ -109,9 +114,13 @@ func main() {
 					fmt.Printf("bad delta: %v\n", err)
 					continue
 				}
-				snap := pointsEngine.AddSelf(delta)
-				fmt.Printf("[POINTS] You now have %d points (v%d)\n", snap.Points, snap.Version)
-				broadcastSelfScore(snap)
+				signed, err := pointsEngine.AddSelf(delta)
+				if err != nil {
+					fmt.Printf("failed to sign snapshot: %v\n", err)
+					continue
+				}
+				fmt.Printf("[POINTS] You now have %d points (v%d)\n", signed.Snapshot.Points, signed.Snapshot.Version)
+				broadcastSelfScore(signed)
 			case line == "/points":
 				snaps := pointsEngine.All()
 				fmt.Println("== Scores ==")
@@ -148,12 +157,13 @@ func main() {
 			fmt.Printf("[GOSSIP] %v\n", body)
 
 		case "points":
-			var snap proto.PointsSnapshot
-			if err := json.Unmarshal(g.Body, &snap); err != nil {
+			var signed proto.SignedPointsSnapshot
+			if err := json.Unmarshal(g.Body, &signed); err != nil {
 				continue
 			}
-			if pointsEngine.ApplyRemote(snap) {
-				fmt.Printf("[POINTS] %s now has %d points (v%d)\n", snap.Name, snap.Points, snap.Version)
+			if pointsEngine.ApplyRemote(signed) {
+				s := signed.Snapshot
+				fmt.Printf("[POINTS] %s now has %d points (v%d)\n", s.Name, s.Points, s.Version)
 			}
 		}
 	}

@@ -64,6 +64,9 @@ func NewNode(cfg NodeConfig) (*Node, error) {
 // ID returns this node's peer ID.
 func (n *Node) ID() string { return n.id.ID }
 
+// Identity returns the node's identity (public/private keypair).
+func (n *Node) Identity() *Identity { return n.id }
+
 // ListenAddr returns where this node is listening.
 func (n *Node) ListenAddr() netx.Addr { return n.addr }
 
