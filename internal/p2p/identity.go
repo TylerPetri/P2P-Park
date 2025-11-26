@@ -12,6 +12,11 @@ type Identity struct {
 	ID   string // hex-encoded public key
 }
 
+// PlayerIDFromPub derives the canonical player ID from a public key.
+func PlayerIDFromPub(pub ed25519.PublicKey) string {
+	return hex.EncodeToString(pub)
+}
+
 func NewIdentity() (*Identity, error) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {

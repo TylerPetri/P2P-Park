@@ -2,6 +2,7 @@ package points
 
 import (
 	"crypto/ed25519"
+	"p2p-park/internal/p2p"
 	"p2p-park/internal/proto"
 	"sort"
 	"sync"
@@ -25,9 +26,9 @@ type Engine struct {
 }
 
 // NewEngine initializes a points engine for a given local identity.
-func NewEngine(selfID, selfName string, priv ed25519.PrivateKey, pub ed25519.PublicKey) *Engine {
+func NewEngine(selfName string, priv ed25519.PrivateKey, pub ed25519.PublicKey) *Engine {
 	return &Engine{
-		selfID:   selfID,
+		selfID:   p2p.PlayerIDFromPub(pub),
 		selfName: selfName,
 		selfPriv: priv,
 		selfPub:  pub,
@@ -59,7 +60,13 @@ func verifySigned(s proto.SignedPointsSnapshot) bool {
 		return false
 	}
 	pub := ed25519.PublicKey(s.PubKey)
-	return ed25519.Verify(pub, data, s.Signature)
+
+	if !ed25519.Verify(pub, data, s.Signature) {
+		return false
+	}
+
+	expectedID := p2p.PlayerIDFromPub(pub)
+	return s.Snapshot.PlayerID != expectedID
 }
 
 // AddSelf increments our own points by delta and returns a signed snapshot.

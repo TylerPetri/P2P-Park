@@ -61,7 +61,7 @@ func main() {
 	fmt.Println()
 
 	id := n.Identity()
-	pointsEngine := points.NewEngine(n.ID(), *name, id.Priv, id.Pub)
+	pointsEngine := points.NewEngine(*name, id.Priv, id.Pub)
 
 	broadcastSelfScore := func(snap proto.SignedPointsSnapshot) {
 		body, _ := json.Marshal(snap)
