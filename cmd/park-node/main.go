@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"p2p-park/internal/app/points"
 	"p2p-park/internal/netx"
 	"p2p-park/internal/p2p"
 	"p2p-park/internal/proto"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -53,8 +55,22 @@ func main() {
 	fmt.Printf("Addr:	%s\n\n", n.ListenAddr())
 	fmt.Println("Commands:")
 	fmt.Println("	/say <message>		- broadcast a chat-like message")
+	fmt.Println("	/add <delta> 		- add points to yourself (e.g. /add 10)")
+	fmt.Println("	/points		- show current scores")
 	fmt.Println("	/quit		- exit")
 	fmt.Println()
+
+	pointsEngine := points.NewEngine(n.ID(), *name)
+
+	broadcastSelfScore := func(snap proto.PointsSnapshot) {
+		body, _ := json.Marshal(snap)
+		n.Broadcast(proto.Gossip{
+			Channel: "points",
+			Body:    body,
+		})
+	}
+
+	broadcastSelfScore(pointsEngine.SnapshotSelf())
 
 	// Reader for stdin.
 	go func() {
@@ -64,12 +80,14 @@ func main() {
 			if line == "" {
 				continue
 			}
-			if strings.HasPrefix(line, "/quit") {
+			switch {
+
+			case strings.HasPrefix(line, "/quit"):
 				fmt.Println("quitting...")
 				n.Stop()
 				os.Exit(0)
-			}
-			if strings.HasPrefix(line, "/say ") {
+
+			case strings.HasPrefix(line, "/say "):
 				msg := strings.TrimSpace(strings.TrimPrefix(line, "/say"))
 				body, _ := json.Marshal(map[string]any{
 					"text":      msg,
@@ -80,9 +98,34 @@ func main() {
 					Channel: "global",
 					Body:    body,
 				})
-				continue
+			case strings.HasPrefix(line, "/add "):
+				arg := strings.TrimSpace(strings.TrimPrefix(line, "/add"))
+				if arg == "" {
+					fmt.Println("usage: /add <delta>")
+					continue
+				}
+				delta, err := strconv.ParseInt(arg, 10, 64)
+				if err != nil {
+					fmt.Printf("bad delta: %v\n", err)
+					continue
+				}
+				snap := pointsEngine.AddSelf(delta)
+				fmt.Printf("[POINTS] You now have %d points (v%d)\n", snap.Points, snap.Version)
+				broadcastSelfScore(snap)
+			case line == "/points":
+				snaps := pointsEngine.All()
+				fmt.Println("== Scores ==")
+				for i, s := range snaps {
+					shortID := s.PlayerID
+					if len(shortID) > 8 {
+						shortID = shortID[:8]
+					}
+					fmt.Printf("%2d. %-12s (%s) : %d\n", i+1, s.Name, shortID, s.Points)
+				}
+
+			default:
+				fmt.Println("unknown command")
 			}
-			fmt.Println("unknown command")
 		}
 	}()
 
@@ -95,13 +138,23 @@ func main() {
 		if err := json.Unmarshal(env.Payload, &g); err != nil {
 			continue
 		}
-		if g.Channel != "global" {
-			continue
+
+		switch g.Channel {
+		case "global":
+			var body map[string]any
+			if err := json.Unmarshal(g.Body, &body); err != nil {
+				continue
+			}
+			fmt.Printf("[GOSSIP] %v\n", body)
+
+		case "points":
+			var snap proto.PointsSnapshot
+			if err := json.Unmarshal(g.Body, &snap); err != nil {
+				continue
+			}
+			if pointsEngine.ApplyRemote(snap) {
+				fmt.Printf("[POINTS] %s now has %d points (v%d)\n", snap.Name, snap.Points, snap.Version)
+			}
 		}
-		var body map[string]any
-		if err := json.Unmarshal(g.Body, &body); err != nil {
-			continue
-		}
-		fmt.Printf("[GOSSIP] %v\n", body)
 	}
 }

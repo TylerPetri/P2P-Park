@@ -39,3 +39,12 @@ type Gossip struct {
 	Channel string          `json:"channel"`
 	Body    json.RawMessage `json:"body"`
 }
+
+// PointsSnapshot represents "here is my current score".
+// Each identity controls its own score: last higher Version wins.
+type PointsSnapshot struct {
+	PlayerID string `json:"player_id"`
+	Name     string `json:"name"`
+	Points   int64  `json:"points"`
+	Version  uint64 `json:"version"`
+}
