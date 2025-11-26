@@ -3,6 +3,7 @@ package p2p
 import (
 	"bufio"
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"log"
 	"p2p-park/internal/netx"
@@ -181,13 +182,56 @@ func (n *Node) handleConn(conn netx.Conn, inbound bool) {
 		default:
 		}
 
-		var env proto.Envelope
-		if err := dec.Decode(&env); err != nil {
+		var senv proto.SignedEnvelope
+		if err := dec.Decode(&senv); err != nil {
 			n.logf("read from %s failed: %v", p.id, err)
 			return
 		}
+		env, ok := n.verifySignedEnvelope(senv)
+		if !ok {
+			n.logf("invalid signed envelope from %s; dropping", p.id)
+			continue
+		}
 		n.handleEnvelope(p, env)
 	}
+}
+
+// signEnvelope signs an Envelope using this node's private key.
+func (n *Node) signEnvelope(env proto.Envelope) (proto.SignedEnvelope, error) {
+	data, err := proto.EncodeEnvelopeCanonical(env)
+	if err != nil {
+		return proto.SignedEnvelope{}, err
+	}
+	sig := ed25519.Sign(n.id.Priv, data)
+	return proto.SignedEnvelope{
+		Envelope:  env,
+		PubKey:    n.id.Pub,
+		Signature: sig,
+	}, nil
+}
+
+// verifySignedEnvelope verifies signature AND that FromID matches pubkey.
+// Returns the inner Envelope if valid.
+func (n *Node) verifySignedEnvelope(senv proto.SignedEnvelope) (proto.Envelope, bool) {
+	data, err := proto.EncodeEnvelopeCanonical(senv.Envelope)
+	if err != nil {
+		return proto.Envelope{}, false
+	}
+	if len(senv.PubKey) != ed25519.PublicKeySize {
+		return proto.Envelope{}, false
+	}
+	pub := ed25519.PublicKey(senv.PubKey)
+
+	if !ed25519.Verify(pub, data, senv.Signature) {
+		return proto.Envelope{}, false
+	}
+
+	expectedID := PlayerIDFromPub(pub)
+	if senv.Envelope.FromID != expectedID {
+		return proto.Envelope{}, false
+	}
+
+	return senv.Envelope, true
 }
 
 func (n *Node) sendHello(enc *json.Encoder) error {
@@ -201,7 +245,11 @@ func (n *Node) sendHello(enc *json.Encoder) error {
 		FromID:  n.id.ID,
 		Payload: proto.MustMarshal(h),
 	}
-	return enc.Encode(env)
+	senv, err := n.signEnvelope(env)
+	if err != nil {
+		return err
+	}
+	return enc.Encode(senv)
 }
 
 func (n *Node) readEnvelope(dec *json.Decoder, timeout time.Duration) (proto.Envelope, error) {
@@ -211,10 +259,20 @@ func (n *Node) readEnvelope(dec *json.Decoder, timeout time.Duration) (proto.Env
 	}
 	ch := make(chan result, 1)
 	go func() {
-		var env proto.Envelope
-		err := dec.Decode(&env)
-		ch <- result{env: env, err: err}
+		var senv proto.SignedEnvelope
+		err := dec.Decode(&senv)
+		if err != nil {
+			ch <- result{err: err}
+			return
+		}
+		env, ok := n.verifySignedEnvelope(senv)
+		if !ok {
+			ch <- result{err: context.Canceled}
+			return
+		}
+		ch <- result{env: env, err: nil}
 	}()
+
 	select {
 	case r := <-ch:
 		return r.env, r.err
@@ -260,7 +318,11 @@ func (n *Node) sendPeerList(p *peer) error {
 		FromID:  n.id.ID,
 		Payload: proto.MustMarshal(pl),
 	}
-	return p.writer.Encode(env)
+	senv, err := n.signEnvelope(env)
+	if err != nil {
+		return err
+	}
+	return p.writer.Encode(senv)
 }
 
 func (n *Node) handleEnvelope(from *peer, env proto.Envelope) {
@@ -313,13 +375,19 @@ func (n *Node) Broadcast(g proto.Gossip) {
 }
 
 func (n *Node) relay(originID string, env proto.Envelope) {
+	senv, err := n.signEnvelope(env)
+	if err != nil {
+		n.logf("relay sign failed: %v", err)
+		return
+	}
+
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 	for id, p := range n.peers {
 		if id == originID {
 			continue
 		}
-		if err := p.writer.Encode(env); err != nil {
+		if err := p.writer.Encode(senv); err != nil {
 			n.logf("relay to %s failed: %v", id, err)
 		}
 	}

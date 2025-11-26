@@ -56,3 +56,11 @@ type SignedPointsSnapshot struct {
 	PubKey    []byte         `json:"pub_key"`
 	Signature []byte         `json:"sig"`
 }
+
+// SignedEnvelope wraps an Envelope with a signature and pubkey.
+// This is what travels on the wire.
+type SignedEnvelope struct {
+	Envelope  Envelope `json:"env"`
+	PubKey    []byte   `json:"pub_key"`
+	Signature []byte   `json:"sig"`
+}
