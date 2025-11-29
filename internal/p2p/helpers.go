@@ -46,3 +46,25 @@ func (n *Node) PeerDisplayName(id string) string {
 	}
 	return id
 }
+
+func (n *Node) SnapshotPeers() []PeerSnapshot {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+
+	out := make([]PeerSnapshot, 0, len(n.peers))
+	for _, p := range n.peers {
+		if p == nil {
+			continue
+		}
+		ps := PeerSnapshot{
+			NetworkID: p.id,
+			Name:      p.name,
+			UserID:    p.userID,
+		}
+		if p.addr != "" {
+			ps.Addr = string(p.addr)
+		}
+		out = append(out, ps)
+	}
+	return out
+}

@@ -21,6 +21,7 @@ type NodeConfig struct {
 	Bootstraps []netx.Addr  // known peers to try on startup
 	Protocol   string       // protocol version string
 	Logger     *log.Logger
+	Debug      bool // flag for showing hidden logs to debug
 }
 
 type peer struct {
@@ -32,6 +33,14 @@ type peer struct {
 	name    string
 	userPub ed25519.PublicKey
 	userID  string
+}
+
+// PeerSnapshot is a read-only view of a connected peer.
+type PeerSnapshot struct {
+	NetworkID string // Noise hex ID (p.id)
+	Name      string // p.name from Identify
+	UserID    string // hex(ed25519 pub) if known
+	Addr      string // listen address string
 }
 
 type Node struct {
@@ -380,6 +389,9 @@ func (n *Node) relay(originID string, env proto.Envelope) {
 }
 
 func (n *Node) logf(format string, args ...any) {
+	if !n.cfg.Debug {
+		return
+	}
 	if n.cfg.Logger != nil {
 		n.cfg.Logger.Printf("[node %s] "+format, append([]any{n.id.ID[:8]}, args...)...)
 	}

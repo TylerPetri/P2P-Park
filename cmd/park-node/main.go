@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -42,6 +43,7 @@ func main() {
 		Bootstraps: bootstraps,
 		Protocol:   "park-p2p/0.1.0",
 		Logger:     logger,
+		Debug:      false,
 	})
 	if err != nil {
 		log.Fatalf("create node: %v", err)
@@ -57,6 +59,7 @@ func main() {
 	fmt.Println("Commands:")
 	fmt.Println("	/say <message>		- broadcast a chat-like message")
 	fmt.Println("	/add <delta> 		- add points to yourself (e.g. /add 10)")
+	fmt.Println(" /me	-	prints your info")
 	fmt.Println("	/points		- show current scores")
 	fmt.Println("	/mkchan	<name>	- make an encrypted channel")
 	fmt.Println("	/joinchan	<name> <hexkey>	- join an ecrypted channel")
@@ -125,6 +128,50 @@ func main() {
 				fmt.Println("quitting...")
 				n.Stop()
 				os.Exit(0)
+
+			case line == "/me":
+				id := n.Identity()
+
+				userID := hex.EncodeToString(id.SignPub) // ed25519
+				networkID := id.ID                       // Noise hex ID
+
+				fmt.Println()
+				fmt.Println("== You ==")
+				fmt.Printf("  Name:       %s\n", *name)
+				fmt.Printf("  UserID:     %s\n", userID)
+				fmt.Printf("  NetworkID:  %s\n", networkID)
+				fmt.Printf("  Listen on:  %s\n", n.ListenAddr())
+				fmt.Println()
+
+			case line == "/peers":
+				peers := n.SnapshotPeers()
+				if len(peers) == 0 {
+					fmt.Println("no peers connected")
+					continue
+				}
+
+				fmt.Println()
+				fmt.Println("Connected peers:")
+				fmt.Printf("%-16s  %-10s  %-10s  %s\n", "NAME", "USERID", "NETID", "ADDR")
+				fmt.Printf("%-16s  %-10s  %-10s  %s\n", "----", "------", "-----", "----")
+
+				for _, p := range peers {
+					name := p.Name
+					if name == "" {
+						name = shortID(p.NetworkID)
+					}
+					coloredName := formatName(name, p.NetworkID)
+
+					shortUser := "-"
+					if p.UserID != "" {
+						shortUser = shortID(p.UserID)
+					}
+					shortNet := shortID(p.NetworkID)
+
+					fmt.Printf("%-16s  %-10s  %-10s  %s\n",
+						coloredName, shortUser, shortNet, p.Addr)
+				}
+				fmt.Println()
 
 			case strings.HasPrefix(line, "/say "):
 				msg := strings.TrimSpace(strings.TrimPrefix(line, "/say"))
@@ -231,11 +278,19 @@ func main() {
 		case g.Channel == "global":
 			var chat proto.ChatMessage
 			if err := json.Unmarshal(g.Body, &chat); err != nil {
+				fmt.Printf("[CHAT] bad chat payload: %v\n", err)
 				continue
 			}
 
+			ts := time.Unix(chat.Timestamp, 0).Format("12:02:02")
+
 			sender := n.PeerDisplayName(env.FromID)
-			fmt.Printf("[GOSSIP] %s: %s\n", sender, chat.Text)
+			if sender == "" {
+				sender = shortID(env.FromID)
+			}
+			colored := formatName(sender, env.FromID)
+
+			fmt.Printf("%s[%s]%s %s: %s\n", ansiDim, ts, ansiReset, colored, chat.Text)
 
 		case g.Channel == "points":
 			var signed proto.SignedPointsSnapshot
