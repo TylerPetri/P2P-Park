@@ -5,7 +5,9 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/json"
+	"io"
 	"log"
+	"p2p-park/internal/crypto/noiseconn"
 	"p2p-park/internal/netx"
 	"p2p-park/internal/proto"
 	"sync"
@@ -125,14 +127,29 @@ func (n *Node) ConnectTo(addr netx.Addr) {
 	}()
 }
 
-func (n *Node) handleConn(conn netx.Conn, inbound bool) {
-	defer conn.Close()
+func (n *Node) handleConn(rawConn netx.Conn, inbound bool) {
+	defer rawConn.Close()
 
-	r := bufio.NewReader(conn)
+	id := n.Identity()
+
+	var sc io.ReadWriteCloser
+	var err error
+	if inbound {
+		sc, err = noiseconn.NewSecureServer(rawConn, id.NoisePriv[:], id.NoisePub[:])
+	} else {
+		sc, err = noiseconn.NewSecureClient(rawConn, id.NoisePriv[:], id.NoisePub[:])
+	}
+	if err != nil {
+		n.logf("noise handshake failed (inboud=%v): %v", inbound, err)
+		return
+	}
+	defer sc.Close()
+
+	r := bufio.NewReader(sc)
 	dec := json.NewDecoder(r)
-	enc := json.NewEncoder(conn)
+	enc := json.NewEncoder(sc)
 
-	// 1) Perform hello handshake.
+	// 1) Perform hello handshake over encrypted channel.
 	if err := n.sendHello(enc); err != nil {
 		n.logf("send hello failed: %v", err)
 		return
@@ -157,7 +174,7 @@ func (n *Node) handleConn(conn netx.Conn, inbound bool) {
 		id:     peerID,
 		name:   hello.Name,
 		addr:   netx.Addr(hello.Listen),
-		conn:   conn,
+		conn:   rawConn,
 		writer: enc,
 	}
 
@@ -202,10 +219,10 @@ func (n *Node) signEnvelope(env proto.Envelope) (proto.SignedEnvelope, error) {
 	if err != nil {
 		return proto.SignedEnvelope{}, err
 	}
-	sig := ed25519.Sign(n.id.Priv, data)
+	sig := ed25519.Sign(n.id.SignPriv, data)
 	return proto.SignedEnvelope{
 		Envelope:  env,
-		PubKey:    n.id.Pub,
+		PubKey:    n.id.SignPub,
 		Signature: sig,
 	}, nil
 }

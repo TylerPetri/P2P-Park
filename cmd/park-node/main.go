@@ -65,7 +65,7 @@ func main() {
 	fmt.Println()
 
 	id := n.Identity()
-	pointsEngine := points.NewEngine(*name, id.Priv, id.Pub)
+	pointsEngine := points.NewEngine(*name, id.SignPriv, id.SignPub)
 
 	broadcastSelfScore := func(snap proto.SignedPointsSnapshot) {
 		body, _ := json.Marshal(snap)
@@ -81,11 +81,8 @@ func main() {
 		fmt.Printf("failed to sign initial snapshot: %v\n", err)
 	}
 
-	// ---- Encrypted channels ----
-	// name -> key
 	encChannels := make(map[string]channel.ChannelKey)
 
-	// Helper: send encrypted message to a named channel.
 	sendEncrypted := func(chName, msg string) {
 		key, ok := encChannels[chName]
 		if !ok {
