@@ -44,6 +44,9 @@ func NewIdentity() (*Identity, error) {
 	}
 
 	nPriv, nPub, err := noiseKeypair()
+	if err != nil {
+		return nil, err
+	}
 
 	id := hex.EncodeToString(nPub[:])
 
