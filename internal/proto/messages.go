@@ -8,6 +8,7 @@ const (
 	MsgHello    MessageType = "hello"
 	MsgPeerList MessageType = "peer_list"
 	MsgGossip   MessageType = "gossip" // generics broadcast payload
+	MsgIdentify MessageType = "identify"
 )
 
 type Envelope struct {
@@ -39,6 +40,20 @@ type PeerList struct {
 type Gossip struct {
 	Channel string          `json:"channel"`
 	Body    json.RawMessage `json:"body"`
+}
+
+// ChatMessage is our payload that is stuffed into Gossip.Body for the global channel
+type ChatMessage struct {
+	Text      string `json:"text"`
+	From      string `json:"from"`
+	Timestamp int64  `json:"timestamp"`
+}
+
+// Identify is sent by each peer after the transport is secured.
+// It tells the remote side "who I am" at the app level.
+type Identify struct {
+	Name    string `json:"name"`     // display name
+	UserPub []byte `json:"user_pub"` // ed25519 public key bytes
 }
 
 // PointsSnapshot represents "here is my current score".

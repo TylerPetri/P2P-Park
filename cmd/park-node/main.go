@@ -128,11 +128,12 @@ func main() {
 
 			case strings.HasPrefix(line, "/say "):
 				msg := strings.TrimSpace(strings.TrimPrefix(line, "/say"))
-				body, _ := json.Marshal(map[string]any{
-					"text":      msg,
-					"from":      *name,
-					"timestamp": time.Now().Unix(),
-				})
+				chat := proto.ChatMessage{
+					Text:      msg,
+					From:      *name,
+					Timestamp: time.Now().Unix(),
+				}
+				body, _ := json.Marshal(chat)
 				n.Broadcast(proto.Gossip{
 					Channel: "global",
 					Body:    body,
@@ -228,11 +229,13 @@ func main() {
 
 		switch {
 		case g.Channel == "global":
-			var body map[string]any
-			if err := json.Unmarshal(g.Body, &body); err != nil {
+			var chat proto.ChatMessage
+			if err := json.Unmarshal(g.Body, &chat); err != nil {
 				continue
 			}
-			fmt.Printf("[GOSSIP] %v\n", body)
+
+			sender := n.PeerDisplayName(env.FromID)
+			fmt.Printf("[GOSSIP] %s: %s\n", sender, chat.Text)
 
 		case g.Channel == "points":
 			var signed proto.SignedPointsSnapshot

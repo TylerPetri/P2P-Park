@@ -25,11 +25,11 @@ type NodeConfig struct {
 
 type peer struct {
 	id     string
-	name   string
 	addr   netx.Addr
 	conn   netx.Conn
 	writer *json.Encoder
 
+	name    string
 	userPub ed25519.PublicKey
 	userID  string
 }
@@ -213,6 +213,10 @@ func (n *Node) handleConn(rawConn netx.Conn, inbound bool) {
 	}
 	defer n.removePeer(p.id)
 
+	if err := n.sendIdentify(p); err != nil {
+		n.logf("send identify to %s failed: %v", peerID, err)
+	}
+
 	n.logf("connected to peer id=%s name=%s addr=%s inbound=%v", p.id, p.name, p.addr, inbound)
 
 	// 2) Send our peer list to help them discover others.
@@ -301,12 +305,12 @@ func (n *Node) snapshotPeers() []proto.PeerInfo {
 	return out
 }
 
-func (n *Node) handleEnvelope(from *peer, env proto.Envelope) {
+func (n *Node) handleEnvelope(p *peer, env proto.Envelope) {
 	switch env.Type {
 	case proto.MsgPeerList:
 		var pl proto.PeerList
 		if err := json.Unmarshal(env.Payload, &pl); err != nil {
-			n.logf("bad peer list from %s: %s", from.id, err)
+			n.logf("bad peer list from %s: %s", p.id, err)
 			return
 		}
 		for _, pi := range pl.Peers {
@@ -324,7 +328,9 @@ func (n *Node) handleEnvelope(from *peer, env proto.Envelope) {
 		case n.incoming <- env:
 		default:
 		}
-		n.relay(from.id, env)
+		n.relay(p.id, env)
+	case proto.MsgIdentify:
+		n.handleIdentify(p, env)
 	default:
 		select {
 		case n.incoming <- env:
