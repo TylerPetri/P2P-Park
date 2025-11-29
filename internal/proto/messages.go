@@ -64,3 +64,9 @@ type SignedEnvelope struct {
 	PubKey    []byte   `json:"pub_key"`
 	Signature []byte   `json:"sig"`
 }
+
+// EncryptedMessage wraps AEAD nonce + ciphertext for encrypted channels.
+type EncryptedMessage struct {
+	Nonce      []byte `json:"nonce"`
+	Ciphertext []byte `json:"ciphertext"`
+}
