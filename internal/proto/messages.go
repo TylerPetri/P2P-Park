@@ -23,13 +23,14 @@ type Hello struct {
 	Protocol string `json:"procol"`
 }
 
+// PeerInfo describes another peer we know about.
 type PeerInfo struct {
 	ID   string `json:"id"`
 	Addr string `json:"addr"`
 	Name string `json:"name"`
 }
 
-// PeerInfo describes another peer we know about.
+// PeerList is exchanged through gossip to populate other peers' Peerlist.
 type PeerList struct {
 	Peers []PeerInfo `json:"peers"`
 }
@@ -55,14 +56,6 @@ type SignedPointsSnapshot struct {
 	Snapshot  PointsSnapshot `json:"snapshot"`
 	PubKey    []byte         `json:"pub_key"`
 	Signature []byte         `json:"sig"`
-}
-
-// SignedEnvelope wraps an Envelope with a signature and pubkey.
-// This is what travels on the wire.
-type SignedEnvelope struct {
-	Envelope  Envelope `json:"env"`
-	PubKey    []byte   `json:"pub_key"`
-	Signature []byte   `json:"sig"`
 }
 
 // EncryptedMessage wraps AEAD nonce + ciphertext for encrypted channels.

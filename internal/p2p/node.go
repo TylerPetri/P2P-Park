@@ -4,8 +4,8 @@ import (
 	"bufio"
 	"context"
 	"crypto/ed25519"
+	"encoding/hex"
 	"encoding/json"
-	"io"
 	"log"
 	"p2p-park/internal/crypto/noiseconn"
 	"p2p-park/internal/netx"
@@ -29,6 +29,9 @@ type peer struct {
 	addr   netx.Addr
 	conn   netx.Conn
 	writer *json.Encoder
+
+	userPub ed25519.PublicKey
+	userID  string
 }
 
 type Node struct {
@@ -132,22 +135,46 @@ func (n *Node) handleConn(rawConn netx.Conn, inbound bool) {
 
 	id := n.Identity()
 
-	var sc io.ReadWriteCloser
-	var err error
+	ip := proto.NoiseIdentityPayload{
+		Name:    n.cfg.Name,
+		UserPub: id.SignPub,
+	}
+	payloadBytes, err := json.Marshal(ip)
+	if err != nil {
+		n.logf("marshal identity payload failed: %v", err)
+		return
+	}
+
+	var hs *noiseconn.HandshakeResult
 	if inbound {
-		sc, err = noiseconn.NewSecureServer(rawConn, id.NoisePriv[:], id.NoisePub[:])
+		hs, err = noiseconn.NewSecureServer(rawConn, id.NoisePriv[:], id.NoisePub[:], payloadBytes)
 	} else {
-		sc, err = noiseconn.NewSecureClient(rawConn, id.NoisePriv[:], id.NoisePub[:])
+		hs, err = noiseconn.NewSecureClient(rawConn, id.NoisePriv[:], id.NoisePub[:], payloadBytes)
 	}
 	if err != nil {
 		n.logf("noise handshake failed (inboud=%v): %v", inbound, err)
 		return
 	}
-	defer sc.Close()
+	defer hs.Conn.Close()
 
-	r := bufio.NewReader(sc)
+	var remoteName string
+	var remoteUserPub ed25519.PublicKey
+	var remoteUserID string
+
+	if len(hs.RemotePayload) > 0 {
+		var rip proto.NoiseIdentityPayload
+		if err := json.Unmarshal(hs.RemotePayload, &rip); err != nil {
+			n.logf("bad remote identity payload: %v", err)
+			return
+		}
+		remoteName = rip.Name
+		remoteUserPub = ed25519.PublicKey(rip.UserPub)
+		remoteUserID = hex.EncodeToString(remoteUserPub)
+	}
+
+	r := bufio.NewReader(hs.Conn)
 	dec := json.NewDecoder(r)
-	enc := json.NewEncoder(sc)
+	enc := json.NewEncoder(hs.Conn)
 
 	// 1) Perform hello handshake over encrypted channel.
 	if err := n.sendHello(enc); err != nil {
@@ -171,11 +198,13 @@ func (n *Node) handleConn(rawConn netx.Conn, inbound bool) {
 
 	peerID := env.FromID
 	p := &peer{
-		id:     peerID,
-		name:   hello.Name,
-		addr:   netx.Addr(hello.Listen),
-		conn:   rawConn,
-		writer: enc,
+		id:      peerID,
+		name:    remoteName,
+		addr:    netx.Addr(hello.Listen),
+		conn:    rawConn,
+		writer:  enc,
+		userPub: remoteUserPub,
+		userID:  remoteUserID,
 	}
 
 	if !n.addPeer(p) {
@@ -199,56 +228,13 @@ func (n *Node) handleConn(rawConn netx.Conn, inbound bool) {
 		default:
 		}
 
-		var senv proto.SignedEnvelope
-		if err := dec.Decode(&senv); err != nil {
+		var env proto.Envelope
+		if err := dec.Decode(&env); err != nil {
 			n.logf("read from %s failed: %v", p.id, err)
 			return
 		}
-		env, ok := n.verifySignedEnvelope(senv)
-		if !ok {
-			n.logf("invalid signed envelope from %s; dropping", p.id)
-			continue
-		}
 		n.handleEnvelope(p, env)
 	}
-}
-
-// signEnvelope signs an Envelope using this node's private key.
-func (n *Node) signEnvelope(env proto.Envelope) (proto.SignedEnvelope, error) {
-	data, err := proto.EncodeEnvelopeCanonical(env)
-	if err != nil {
-		return proto.SignedEnvelope{}, err
-	}
-	sig := ed25519.Sign(n.id.SignPriv, data)
-	return proto.SignedEnvelope{
-		Envelope:  env,
-		PubKey:    n.id.SignPub,
-		Signature: sig,
-	}, nil
-}
-
-// verifySignedEnvelope verifies signature AND that FromID matches pubkey.
-// Returns the inner Envelope if valid.
-func (n *Node) verifySignedEnvelope(senv proto.SignedEnvelope) (proto.Envelope, bool) {
-	data, err := proto.EncodeEnvelopeCanonical(senv.Envelope)
-	if err != nil {
-		return proto.Envelope{}, false
-	}
-	if len(senv.PubKey) != ed25519.PublicKeySize {
-		return proto.Envelope{}, false
-	}
-	pub := ed25519.PublicKey(senv.PubKey)
-
-	if !ed25519.Verify(pub, data, senv.Signature) {
-		return proto.Envelope{}, false
-	}
-
-	expectedID := PlayerIDFromPub(pub)
-	if senv.Envelope.FromID != expectedID {
-		return proto.Envelope{}, false
-	}
-
-	return senv.Envelope, true
 }
 
 func (n *Node) sendHello(enc *json.Encoder) error {
@@ -262,11 +248,7 @@ func (n *Node) sendHello(enc *json.Encoder) error {
 		FromID:  n.id.ID,
 		Payload: proto.MustMarshal(h),
 	}
-	senv, err := n.signEnvelope(env)
-	if err != nil {
-		return err
-	}
-	return enc.Encode(senv)
+	return enc.Encode(env)
 }
 
 func (n *Node) readEnvelope(dec *json.Decoder, timeout time.Duration) (proto.Envelope, error) {
@@ -276,18 +258,9 @@ func (n *Node) readEnvelope(dec *json.Decoder, timeout time.Duration) (proto.Env
 	}
 	ch := make(chan result, 1)
 	go func() {
-		var senv proto.SignedEnvelope
-		err := dec.Decode(&senv)
-		if err != nil {
-			ch <- result{err: err}
-			return
-		}
-		env, ok := n.verifySignedEnvelope(senv)
-		if !ok {
-			ch <- result{err: context.Canceled}
-			return
-		}
-		ch <- result{env: env, err: nil}
+		var env proto.Envelope
+		err := dec.Decode(&env)
+		ch <- result{env: env, err: err}
 	}()
 
 	select {
@@ -326,20 +299,6 @@ func (n *Node) snapshotPeers() []proto.PeerInfo {
 		})
 	}
 	return out
-}
-
-func (n *Node) sendPeerList(p *peer) error {
-	pl := proto.PeerList{Peers: n.snapshotPeers()}
-	env := proto.Envelope{
-		Type:    proto.MsgPeerList,
-		FromID:  n.id.ID,
-		Payload: proto.MustMarshal(pl),
-	}
-	senv, err := n.signEnvelope(env)
-	if err != nil {
-		return err
-	}
-	return p.writer.Encode(senv)
 }
 
 func (n *Node) handleEnvelope(from *peer, env proto.Envelope) {
@@ -381,6 +340,16 @@ func (n *Node) hasPeer(id string) bool {
 	return ok
 }
 
+func (n *Node) sendPeerList(p *peer) error {
+	pl := proto.PeerList{Peers: n.snapshotPeers()}
+	env := proto.Envelope{
+		Type:    proto.MsgPeerList,
+		FromID:  n.id.ID,
+		Payload: proto.MustMarshal(pl),
+	}
+	return p.writer.Encode(env)
+}
+
 // Broadcast sends a gossip mesage to all connected peers.
 func (n *Node) Broadcast(g proto.Gossip) {
 	env := proto.Envelope{
@@ -392,19 +361,13 @@ func (n *Node) Broadcast(g proto.Gossip) {
 }
 
 func (n *Node) relay(originID string, env proto.Envelope) {
-	senv, err := n.signEnvelope(env)
-	if err != nil {
-		n.logf("relay sign failed: %v", err)
-		return
-	}
-
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 	for id, p := range n.peers {
 		if id == originID {
 			continue
 		}
-		if err := p.writer.Encode(senv); err != nil {
+		if err := p.writer.Encode(env); err != nil {
 			n.logf("relay to %s failed: %v", id, err)
 		}
 	}

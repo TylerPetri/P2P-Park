@@ -15,8 +15,3 @@ func MustMarshal(v any) json.RawMessage {
 func EncodeSnapshotCanonical(s PointsSnapshot) ([]byte, error) {
 	return json.Marshal(s)
 }
-
-// EncodeEnvelopeCanonical encodes an Envelope deterministically for signing.
-func EncodeEnvelopeCanonical(env Envelope) ([]byte, error) {
-	return json.Marshal(env)
-}

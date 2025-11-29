@@ -76,9 +76,9 @@ func main() {
 	}
 
 	if snap, err := pointsEngine.SnapshotSelf(); err != nil {
-		broadcastSelfScore(snap)
-	} else {
 		fmt.Printf("failed to sign initial snapshot: %v\n", err)
+	} else {
+		broadcastSelfScore(snap)
 	}
 
 	encChannels := make(map[string]channel.ChannelKey)

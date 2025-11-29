@@ -9,7 +9,7 @@ import (
 	"github.com/flynn/noise"
 )
 
-// SecureConn wraps an underlying stream with Noise cipher states
+// SecureConn wraps an underlying stream with Noise cipher states.
 type SecureConn struct {
 	underlying io.ReadWriteCloser
 
@@ -46,7 +46,7 @@ func (c *SecureConn) Read(p []byte) (int, error) {
 	return len(pt), nil
 }
 
-// Write encrypts p as a single frame and write it with a length prefix.
+// Write encrypts p as a single frame and writes it with a length prefix.
 func (c *SecureConn) Write(p []byte) (int, error) {
 	ct, err := c.writeCS.Encrypt(nil, nil, p)
 	if err != nil {
@@ -68,8 +68,18 @@ func (c *SecureConn) Close() error {
 	return c.underlying.Close()
 }
 
-// NewSecureClient runs a Noise_XX handshake as initiator and returns a SecureConn.
-func NewSecureClient(underlying io.ReadWriteCloser, staticPriv, staticPub []byte) (*SecureConn, error) {
+// HandshakeResult contains the secure connection plus the remote's identity payload.
+type HandshakeResult struct {
+	Conn          *SecureConn
+	RemotePayload []byte
+}
+
+// NewSecureClient runs a Noise_XX handshake as initiator and attaches localPayload
+// as the final handshake payload (identity, etc.).
+func NewSecureClient(
+	underlying io.ReadWriteCloser,
+	staticPriv, staticPub, localPayload []byte,
+) (*HandshakeResult, error) {
 	cs := noise.NewCipherSuite(noise.DH25519, noise.CipherChaChaPoly, noise.HashBLAKE2s)
 
 	cfg := noise.Config{
@@ -85,45 +95,53 @@ func NewSecureClient(underlying io.ReadWriteCloser, staticPriv, staticPub []byte
 		return nil, err
 	}
 
+	// XX pattern: 3 messages total.
+
 	// -> e
-	msg, _, _, err := hs.WriteMessage(nil, nil)
+	msg1, _, _, err := hs.WriteMessage(nil, nil)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := underlying.Write(msg); err != nil {
+	if err := writeHandshakeMsg(underlying, msg1); err != nil {
 		return nil, err
 	}
 
 	// <- e, ee, s, es
-	buf := make([]byte, 65535)
-	n, err := underlying.Read(buf)
+	msg2, err := readHandshakeMsg(underlying)
 	if err != nil {
 		return nil, err
 	}
-	_, _, _, err = hs.ReadMessage(nil, buf[:n])
-	if err != nil {
+	if _, _, _, err := hs.ReadMessage(nil, msg2); err != nil {
 		return nil, err
 	}
 
-	// -> s, se
-	msg2, cs1, cs2, err := hs.WriteMessage(nil, nil)
+	// -> s, se, payload (our identity payload)
+	msg3, cs1, cs2, err := hs.WriteMessage(nil, localPayload)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := underlying.Write(msg2); err != nil {
+	if err := writeHandshakeMsg(underlying, msg3); err != nil {
 		return nil, err
 	}
 
-	// Note: convention is cs2 for read and cs1 for write, the noise docs specify the order; if messages decypt wrong, swap.
-	return &SecureConn{
-		underlying: underlying,
-		readCS:     cs2,
-		writeCS:    cs1,
+	// Per noise docs, for the party that *writes* the final message:
+	//   first CipherState = sending, second = receiving.
+	return &HandshakeResult{
+		Conn: &SecureConn{
+			underlying: underlying,
+			readCS:     cs2, // receiving
+			writeCS:    cs1, // sending
+		},
+		RemotePayload: nil, // XX here carries payload only from initiator -> responder
 	}, nil
 }
 
-// NewSecureServer runs a Noise_XX handshake as responder and returns a SecureConn.
-func NewSecureServer(underlying io.ReadWriteCloser, staticPriv, staticPub []byte) (*SecureConn, error) {
+// NewSecureServer runs a Noise_XX handshake as responder and returns a SecureConn,
+// plus the remote's identity payload (from initiator).
+func NewSecureServer(
+	underlying io.ReadWriteCloser,
+	staticPriv, staticPub, _ []byte, // localPayload currently unused
+) (*HandshakeResult, error) {
 	cs := noise.NewCipherSuite(noise.DH25519, noise.CipherChaChaPoly, noise.HashBLAKE2s)
 
 	cfg := noise.Config{
@@ -140,39 +158,41 @@ func NewSecureServer(underlying io.ReadWriteCloser, staticPriv, staticPub []byte
 	}
 
 	// <- e
-	buf := make([]byte, 65535)
-	n, err := underlying.Read(buf)
+	msg1, err := readHandshakeMsg(underlying)
 	if err != nil {
 		return nil, err
 	}
-	_, _, _, err = hs.ReadMessage(nil, buf[:n])
-	if err != nil {
+	if _, _, _, err := hs.ReadMessage(nil, msg1); err != nil {
 		return nil, err
 	}
 
 	// -> e, ee, s, es
-	msg, _, _, err := hs.WriteMessage(nil, nil)
+	msg2, _, _, err := hs.WriteMessage(nil, nil)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := underlying.Write(msg); err != nil {
+	if err := writeHandshakeMsg(underlying, msg2); err != nil {
 		return nil, err
 	}
 
-	// <- s, se
-	n2, err := underlying.Read(buf)
+	// <- s, se, payload (initiator's identity payload)
+	msg3, err := readHandshakeMsg(underlying)
 	if err != nil {
 		return nil, err
 	}
-	_, cs1, cs2, err := hs.ReadMessage(nil, buf[:n2])
+	remotePayload, cs1, cs2, err := hs.ReadMessage(nil, msg3)
 	if err != nil {
 		return nil, err
 	}
 
-	// For responder, cipher state order is swapped relative to initiator.
-	return &SecureConn{
-		underlying: underlying,
-		readCS:     cs1,
-		writeCS:    cs2,
+	// For the party that *reads* the final message:
+	//   first CipherState = receiving, second = sending.
+	return &HandshakeResult{
+		Conn: &SecureConn{
+			underlying: underlying,
+			readCS:     cs1, // receiving
+			writeCS:    cs2, // sending
+		},
+		RemotePayload: remotePayload,
 	}, nil
 }
