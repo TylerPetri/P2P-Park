@@ -2,8 +2,8 @@ package discovery
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
-	"p2p-park/internal/p2p"
 	"path/filepath"
 	"time"
 )
@@ -20,6 +20,14 @@ type PeerStore struct {
 	peers map[string]*peerRecord
 }
 
+func DefaultPeerStorePath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = "."
+	}
+	return filepath.Join(home, ".p2p-park-peers.json")
+}
+
 func NewPeerStore(path string) *PeerStore {
 	ps := &PeerStore{
 		path:  path,
@@ -32,11 +40,12 @@ func NewPeerStore(path string) *PeerStore {
 func (ps *PeerStore) load() error {
 	data, err := os.ReadFile(ps.path)
 	if err != nil {
-		return err
+		// file missing is fine an first run
+		return nil
 	}
 	var recs []*peerRecord
 	if err := json.Unmarshal(data, &recs); err != nil {
-		return err
+		return fmt.Errorf("peerstore decode: %w", err)
 	}
 	for _, r := range recs {
 		ps.peers[r.Addr] = r
@@ -49,11 +58,11 @@ func (ps *PeerStore) save() error {
 	for _, r := range ps.peers {
 		recs = append(recs, r)
 	}
-	tmp := ps.path + ".tmp"
 	data, err := json.MarshalIndent(recs, "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf("peerstore encode: %w", err)
 	}
+	tmp := ps.path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
@@ -84,22 +93,13 @@ func (ps *PeerStore) NoteFailure(addr string) {
 	_ = ps.save()
 }
 
-type PeerStoreStrategy struct {
-	Store *PeerStore
-}
-
-func (s *PeerStoreStrategy) Discover(_ *p2p.Node) []string {
-	var out []string
-	for addr, r := range s.Store.peers {
-		if r.FailureCount > 5 {
+func (ps *PeerStore) Candidates(maxFailures int) []string {
+	out := make([]string, 0, len(ps.peers))
+	for addr, r := range ps.peers {
+		if r.FailureCount > maxFailures {
 			continue
 		}
 		out = append(out, addr)
 	}
 	return out
-}
-
-func DefaultPeerStorePath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".p2p-park-peers.json")
 }

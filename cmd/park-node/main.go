@@ -71,36 +71,17 @@ func main() {
 		fmt.Printf("LAN responder failed: %v\n", err)
 	}
 
-	// Do initial LAN scan to auto-connect
-	go func() {
-		time.Sleep(200 * time.Millisecond)
-		addrs, err := discovery.DiscoverLANPeers(lanCfg, string(listenAddr), *name)
-		if err != nil {
-			fmt.Printf("LAN discover error: %v\n", err)
-			return
-		}
-
-		if len(addrs) == 0 {
-			fmt.Println("[DISCOVERY] no peers found on LAN")
-		} else {
-			fmt.Printf("[DISCOVERY] found %d peers: %v\n", len(addrs), addrs)
-		}
-
-		for _, addr := range addrs {
-			go func(a string) {
-				if err := n.ConnectTo(netx.Addr(a)); err != nil {
-					fmt.Printf("[DISCOVERY] connect to %s failed: %v\n", a, err)
-				}
-			}(addr)
-		}
-	}()
+	// Start DiscoveryManager (LAN + PeerStore + Seeds)
+	ps := discovery.NewPeerStore(discovery.DefaultPeerStorePath())
+	mgr := discovery.NewManager(ps, lanCfg)
+	mgr.Run(n)
 
 	fmt.Printf("Node started.\n")
 	fmt.Printf("ID:		%s\n", n.ID())
 	fmt.Printf("Addr:	%s\n\n", n.ListenAddr())
 	fmt.Println("Commands:")
 	fmt.Println("	/say <message>		- broadcast a chat-like message")
-	fmt.Println("	/add <delta> 		- add points to yourself (e.g. /add 10)")
+	fmt.Println("	/add <delta> 		- add points to yourself")
 	fmt.Println(" /me	-	prints your info")
 	fmt.Println("	/points		- show current scores")
 	fmt.Println("	/mkchan	<name>	- make an encrypted channel")
