@@ -128,15 +128,15 @@ func (n *Node) acceptLoop() {
 }
 
 // ConnectTo allows manual dialing (used by discovery/bootstraps).
-func (n *Node) ConnectTo(addr netx.Addr) {
-	go func() {
-		conn, err := n.cfg.Network.Dial(addr)
-		if err != nil {
-			n.logf("dial %s failed: %v", addr, err)
-			return
-		}
-		n.handleConn(conn, false)
-	}()
+func (n *Node) ConnectTo(addr netx.Addr) error {
+	conn, err := n.cfg.Network.Dial(addr)
+	if err != nil {
+		n.logf("dial %s failed: %v", addr, err)
+		return err
+	}
+
+	go n.handleConn(conn, false)
+	return nil
 }
 
 func (n *Node) handleConn(rawConn netx.Conn, inbound bool) {

@@ -1,10 +1,11 @@
 LOCAL=127.0.0.1
 ADDR=:12345
-NAME=Vee
+NAME=Ian
+#Vee
 #Sydney
 
-init:
-	@go run ./cmd/park-node -name Ian
+run:
+	@go run ./cmd/park-node -name ${NAME}
 
-join:
+bootstrap:
 	@go run ./cmd/park-node -name ${NAME} -bootstrap ${LOCAL}${ADDR}

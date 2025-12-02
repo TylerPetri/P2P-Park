@@ -8,13 +8,16 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"p2p-park/internal/app/points"
 	"p2p-park/internal/crypto/channel"
+	"p2p-park/internal/discovery"
 	"p2p-park/internal/netx"
 	"p2p-park/internal/p2p"
 	"p2p-park/internal/proto"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -34,6 +37,14 @@ func main() {
 		}
 	}
 
+	stop := make(chan struct{})
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		close(stop)
+	}()
+
 	logger := log.New(os.Stdout, "", log.LstdFlags)
 
 	n, err := p2p.NewNode(p2p.NodeConfig{
@@ -52,6 +63,37 @@ func main() {
 	if err := n.Start(); err != nil {
 		log.Fatalf("start node: %v", err)
 	}
+
+	// Start LAN discovery responder
+	lanCfg := discovery.DefaultLANConfig()
+	listenAddr := n.ListenAddr()
+	if err := discovery.StartLANResponder(stop, lanCfg, string(listenAddr), *name); err != nil {
+		fmt.Printf("LAN responder failed: %v\n", err)
+	}
+
+	// Do initial LAN scan to auto-connect
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		addrs, err := discovery.DiscoverLANPeers(lanCfg, string(listenAddr), *name)
+		if err != nil {
+			fmt.Printf("LAN discover error: %v\n", err)
+			return
+		}
+
+		if len(addrs) == 0 {
+			fmt.Println("[DISCOVERY] no peers found on LAN")
+		} else {
+			fmt.Printf("[DISCOVERY] found %d peers: %v\n", len(addrs), addrs)
+		}
+
+		for _, addr := range addrs {
+			go func(a string) {
+				if err := n.ConnectTo(netx.Addr(a)); err != nil {
+					fmt.Printf("[DISCOVERY] connect to %s failed: %v\n", a, err)
+				}
+			}(addr)
+		}
+	}()
 
 	fmt.Printf("Node started.\n")
 	fmt.Printf("ID:		%s\n", n.ID())
