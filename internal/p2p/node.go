@@ -22,13 +22,15 @@ type NodeConfig struct {
 	Protocol   string       // protocol version string
 	Logger     *log.Logger
 	Debug      bool // flag for showing hidden logs to debug
+	IsSeed     bool // if true, this node will keep NAT registry & relay
 }
 
 type peer struct {
-	id     string
-	addr   netx.Addr
-	conn   netx.Conn
-	writer *json.Encoder
+	id           string
+	addr         netx.Addr
+	observedAddr netx.Addr
+	conn         netx.Conn
+	writer       *json.Encoder
 
 	name    string
 	userPub ed25519.PublicKey
@@ -54,7 +56,8 @@ type Node struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	incoming chan proto.Envelope // gossip and other messages
+	incoming    chan proto.Envelope // gossip and other messages
+	natByUserID map[string]*peer    // only meaningful when cfg.IsSeed == true
 }
 
 func NewNode(cfg NodeConfig) (*Node, error) {
@@ -66,14 +69,18 @@ func NewNode(cfg NodeConfig) (*Node, error) {
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Node{
+	n := &Node{
 		cfg:      cfg,
 		id:       id,
 		peers:    make(map[string]*peer),
 		ctx:      ctx,
 		cancel:   cancel,
 		incoming: make(chan proto.Envelope, 128),
-	}, nil
+	}
+	if cfg.IsSeed {
+		n.natByUserID = make(map[string]*peer)
+	}
+	return n, nil
 }
 
 // ID returns this node's peer ID.
@@ -205,15 +212,22 @@ func (n *Node) handleConn(rawConn netx.Conn, inbound bool) {
 		return
 	}
 
+	ra := rawConn.RemoteAddr()
+	// var observed netx.Addr
+	// if ta, ok := ra.(*net.TCPAddr); ok {
+	// 	observed = netx.Addr(ta.String())
+	// }
+
 	peerID := env.FromID
 	p := &peer{
-		id:      peerID,
-		name:    remoteName,
-		addr:    netx.Addr(hello.Listen),
-		conn:    rawConn,
-		writer:  enc,
-		userPub: remoteUserPub,
-		userID:  remoteUserID,
+		id:           peerID,
+		name:         remoteName,
+		addr:         netx.Addr(hello.Listen),
+		observedAddr: ra,
+		conn:         rawConn,
+		writer:       enc,
+		userPub:      remoteUserPub,
+		userID:       remoteUserID,
 	}
 
 	if !n.addPeer(p) {
@@ -221,6 +235,12 @@ func (n *Node) handleConn(rawConn netx.Conn, inbound bool) {
 		return
 	}
 	defer n.removePeer(p.id)
+
+	if !n.cfg.IsSeed {
+		if err := n.sendNatRegister(p); err != nil {
+			n.logf("send NAT register to %s failed: %v", p.id, err)
+		}
+	}
 
 	if err := n.sendIdentify(p); err != nil {
 		n.logf("send identify to %s failed: %v", peerID, err)
@@ -305,11 +325,21 @@ func (n *Node) snapshotPeers() []proto.PeerInfo {
 	defer n.mu.RUnlock()
 	out := make([]proto.PeerInfo, 0, len(n.peers))
 	for _, p := range n.peers {
-		out = append(out, proto.PeerInfo{
+		if p == nil {
+			continue
+		}
+
+		info := proto.PeerInfo{
 			ID:   p.id,
-			Addr: string(p.addr),
 			Name: p.name,
-		})
+			Addr: string(p.addr),
+		}
+
+		if p.observedAddr != "" && n.cfg.IsSeed {
+			info.PublicAddr = string(p.observedAddr)
+		}
+
+		out = append(out, info)
 	}
 	return out
 }
@@ -340,6 +370,14 @@ func (n *Node) handleEnvelope(p *peer, env proto.Envelope) {
 		n.relay(p.id, env)
 	case proto.MsgIdentify:
 		n.handleIdentify(p, env)
+	case proto.MsgNatRegister:
+		n.handleNatRegister(p, env)
+	case proto.MsgNatRelay:
+		if n.cfg.IsSeed {
+			n.handleNatRelaySeed(p, env)
+		} else {
+			n.handleNatRelayClient(p, env)
+		}
 	default:
 		select {
 		case n.incoming <- env:
@@ -395,4 +433,96 @@ func (n *Node) logf(format string, args ...any) {
 	if n.cfg.Logger != nil {
 		n.cfg.Logger.Printf("[node %s] "+format, append([]any{n.id.ID[:8]}, args...)...)
 	}
+}
+
+func (n *Node) sendNatRegister(p *peer) error {
+	id := n.Identity()
+
+	userID := hex.EncodeToString(id.SignPub)
+	reg := proto.NatRegister{
+		UserID: userID,
+		Name:   n.cfg.Name,
+	}
+
+	env := proto.Envelope{
+		Type:    proto.MsgNatRegister,
+		FromID:  n.id.ID,
+		Payload: proto.MustMarshal(reg),
+	}
+	return p.writer.Encode(env)
+}
+
+func (n *Node) handleNatRegister(p *peer, env proto.Envelope) {
+	if !n.cfg.IsSeed {
+		return
+	}
+
+	var reg proto.NatRegister
+	if err := json.Unmarshal(env.Payload, &reg); err != nil {
+		n.logf("bad NatRegister from %s: %v", p.id, err)
+		return
+	}
+	if reg.UserID == "" {
+		n.logf("NatRegister from %s missing user_id", p.id)
+		return
+	}
+
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.natByUserID == nil {
+		n.natByUserID = make(map[string]*peer)
+	}
+	n.natByUserID[reg.UserID] = p
+
+	p.userID = reg.UserID
+	if p.name == "" && reg.Name != "" {
+		p.name = reg.Name
+	}
+
+	n.logf("NAT register: %s → peer %s", reg.UserID, p.id)
+}
+
+func (n *Node) handleNatRelaySeed(fromPeer *peer, env proto.Envelope) {
+	if !n.cfg.IsSeed {
+		return
+	}
+
+	var msg proto.NatRelay
+	if err := json.Unmarshal(env.Payload, &msg); err != nil {
+		n.logf("bad NatRelay from %s: %v", fromPeer.id, err)
+		return
+	}
+	if msg.ToUserID == "" {
+		n.logf("NatRelay from %s missing ToUserID", fromPeer.id)
+		return
+	}
+
+	n.mu.RLock()
+	target := n.natByUserID[msg.ToUserID]
+	n.mu.RUnlock()
+
+	if target == nil {
+		n.logf("NatRelay: no target for user %s", msg.ToUserID)
+		return
+	}
+
+	// We re-wrap it in an Envelope so the target knows it came via NAT.
+	fwdEnv := proto.Envelope{
+		Type:    proto.MsgNatRelay,
+		FromID:  fromPeer.id, // network ID of the original sender
+		Payload: env.Payload, // same NatRelay payload
+	}
+
+	if err := target.writer.Encode(fwdEnv); err != nil {
+		n.logf("NatRelay forward to %s failed: %v", msg.ToUserID, err)
+	}
+}
+
+func (n *Node) handleNatRelayClient(fromPeer *peer, env proto.Envelope) {
+	var msg proto.NatRelay
+	if err := json.Unmarshal(env.Payload, &msg); err != nil {
+		n.logf("bad NatRelay inbound: %v", err)
+		return
+	}
+	n.logf("NatRelay from %s to %s; payload=%s", env.FromID, msg.ToUserID, string(msg.Payload))
 }

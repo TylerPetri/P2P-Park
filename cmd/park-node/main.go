@@ -24,6 +24,7 @@ import (
 func main() {
 	name := flag.String("name", "anon", "display name")
 	bind := flag.String("bind", ":0", "bind address (e.g. :0 for random port)")
+	seed := flag.Bool("seed", false, "run as SeedNode (rendezvous/relay)")
 	bootstrapStr := flag.String("bootstrap", "", "comma-separated bootstrap addresses host:port")
 	flag.Parse()
 
@@ -55,6 +56,7 @@ func main() {
 		Protocol:   "park-p2p/0.1.0",
 		Logger:     logger,
 		Debug:      false,
+		IsSeed:     *seed,
 	})
 	if err != nil {
 		log.Fatalf("create node: %v", err)

@@ -5,10 +5,12 @@ import "encoding/json"
 type MessageType string
 
 const (
-	MsgHello    MessageType = "hello"
-	MsgPeerList MessageType = "peer_list"
-	MsgGossip   MessageType = "gossip" // generics broadcast payload
-	MsgIdentify MessageType = "identify"
+	MsgHello       MessageType = "hello"
+	MsgPeerList    MessageType = "peer_list"
+	MsgGossip      MessageType = "gossip" // generics broadcast payload
+	MsgIdentify    MessageType = "identify"
+	MsgNatRegister MessageType = "nat_register"
+	MsgNatRelay    MessageType = "nat_relay"
 )
 
 type Envelope struct {
@@ -26,9 +28,10 @@ type Hello struct {
 
 // PeerInfo describes another peer we know about.
 type PeerInfo struct {
-	ID   string `json:"id"`
-	Addr string `json:"addr"`
-	Name string `json:"name"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Addr       string `json:"addr"`
+	PublicAddr string `json:"public_addr"`
 }
 
 // PeerList is exchanged through gossip to populate other peers' Peerlist.
@@ -77,4 +80,18 @@ type SignedPointsSnapshot struct {
 type EncryptedMessage struct {
 	Nonce      []byte `json:"nonce"`
 	Ciphertext []byte `json:"ciphertext"`
+}
+
+// NatRegister is sent from a client to a SeedNode to say:
+// "I'm online as this user; please be able to route to me."
+type NatRegister struct {
+	UserID string `json:"user_id"` // hex(ed25519 pub) or your userID
+	Name   string `json:"name"`    // display name (optional, for debugging)
+}
+
+// NatRelay is sent from a client to a SeedNode, and the SeedNode forwards it
+// to the target user if they're registered and connected.
+type NatRelay struct {
+	ToUserID string          `json:"to_user_id"` // target user
+	Payload  json.RawMessage `json:"payload"`    // opaque; app defines
 }
