@@ -9,3 +9,6 @@ run:
 
 bootstrap:
 	@go run ./cmd/park-node -name ${NAME} -bootstrap ${LOCAL}${ADDR}
+
+race:
+	GOFLAGS=-race go test ./...

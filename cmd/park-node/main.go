@@ -17,6 +17,7 @@ import (
 	"p2p-park/internal/proto"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -110,9 +111,12 @@ func main() {
 	}
 
 	encChannels := make(map[string]channel.ChannelKey)
+	var encMu sync.RWMutex
 
 	sendEncrypted := func(chName, msg string) {
+		encMu.RLock()
 		key, ok := encChannels[chName]
+		encMu.RUnlock()
 		if !ok {
 			fmt.Printf("not joined to channel %q\n", chName)
 			return
@@ -252,7 +256,9 @@ func main() {
 					fmt.Printf("mkchan: %v\n", err)
 					continue
 				}
+				encMu.Lock()
 				encChannels[chName] = k
+				encMu.Unlock()
 				fmt.Printf("[CHAN] created channel %q\n", chName)
 				fmt.Printf("[CHAN] share this key with others:\n  %s\n", channel.KeyToHex(k))
 
@@ -269,7 +275,9 @@ func main() {
 					fmt.Printf("joinchan: %v\n", err)
 					continue
 				}
+				encMu.Lock()
 				encChannels[chName] = k
+				encMu.Unlock()
 				fmt.Printf("[CHAN] joined channel %q\n", chName)
 
 			case strings.HasPrefix(line, "/encsay "):
@@ -329,7 +337,9 @@ func main() {
 
 		case strings.HasPrefix(g.Channel, "enc:"):
 			chName := strings.TrimPrefix(g.Channel, "enc:")
+			encMu.RLock()
 			key, ok := encChannels[chName]
+			encMu.RUnlock()
 			if !ok {
 				continue
 			}

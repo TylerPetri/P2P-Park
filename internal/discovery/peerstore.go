@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -17,6 +18,7 @@ type peerRecord struct {
 
 type PeerStore struct {
 	path  string
+	mu    sync.RWMutex
 	peers map[string]*peerRecord
 }
 
@@ -47,6 +49,9 @@ func (ps *PeerStore) load() error {
 	if err := json.Unmarshal(data, &recs); err != nil {
 		return fmt.Errorf("peerstore decode: %w", err)
 	}
+
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
 	for _, r := range recs {
 		ps.peers[r.Addr] = r
 	}
@@ -54,10 +59,13 @@ func (ps *PeerStore) load() error {
 }
 
 func (ps *PeerStore) save() error {
+	ps.mu.RLock()
 	var recs []*peerRecord
 	for _, r := range ps.peers {
 		recs = append(recs, r)
 	}
+	ps.mu.RUnlock()
+
 	data, err := json.MarshalIndent(recs, "", "  ")
 	if err != nil {
 		return fmt.Errorf("peerstore encode: %w", err)
@@ -70,6 +78,7 @@ func (ps *PeerStore) save() error {
 }
 
 func (ps *PeerStore) NoteSuccess(addr string) {
+	ps.mu.Lock()
 	r, ok := ps.peers[addr]
 	if !ok {
 		r = &peerRecord{Addr: addr}
@@ -79,10 +88,13 @@ func (ps *PeerStore) NoteSuccess(addr string) {
 	r.LastSeen = now
 	r.LastSuccess = now
 	r.FailureCount = 0
+	ps.mu.Unlock()
+
 	_ = ps.save()
 }
 
 func (ps *PeerStore) NoteFailure(addr string) {
+	ps.mu.Lock()
 	r, ok := ps.peers[addr]
 	if !ok {
 		r = &peerRecord{Addr: addr}
@@ -90,10 +102,15 @@ func (ps *PeerStore) NoteFailure(addr string) {
 	}
 	r.FailureCount++
 	r.LastSeen = time.Now()
+	ps.mu.Unlock()
+
 	_ = ps.save()
 }
 
 func (ps *PeerStore) Candidates(maxFailures int) []string {
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
+
 	out := make([]string, 0, len(ps.peers))
 	for addr, r := range ps.peers {
 		if r.FailureCount > maxFailures {

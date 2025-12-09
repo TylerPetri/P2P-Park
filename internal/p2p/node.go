@@ -32,6 +32,8 @@ type peer struct {
 	conn         netx.Conn
 	writer       *json.Encoder
 
+	sendCh chan proto.Envelope
+
 	name    string
 	userPub ed25519.PublicKey
 	userID  string
@@ -213,10 +215,6 @@ func (n *Node) handleConn(rawConn netx.Conn, inbound bool) {
 	}
 
 	ra := rawConn.RemoteAddr()
-	// var observed netx.Addr
-	// if ta, ok := ra.(*net.TCPAddr); ok {
-	// 	observed = netx.Addr(ta.String())
-	// }
 
 	peerID := env.FromID
 	p := &peer{
@@ -226,6 +224,7 @@ func (n *Node) handleConn(rawConn netx.Conn, inbound bool) {
 		observedAddr: ra,
 		conn:         rawConn,
 		writer:       enc,
+		sendCh:       make(chan proto.Envelope, 128), // TODO: revisit buffer size
 		userPub:      remoteUserPub,
 		userID:       remoteUserID,
 	}
@@ -234,6 +233,7 @@ func (n *Node) handleConn(rawConn netx.Conn, inbound bool) {
 		n.logf("duplicate peer %s; closing", p.id)
 		return
 	}
+	go p.writeLoop(n.ctx, n)
 	defer n.removePeer(p.id)
 
 	if !n.cfg.IsSeed {
@@ -317,7 +317,17 @@ func (n *Node) addPeer(p *peer) bool {
 func (n *Node) removePeer(id string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+
+	p, ok := n.peers[id]
+	if !ok {
+		return
+	}
 	delete(n.peers, id)
+
+	close(p.sendCh)
+	_ = p.conn.Close()
+
+	n.logf("peer %s removed", id)
 }
 
 func (n *Node) snapshotPeers() []proto.PeerInfo {
@@ -400,7 +410,8 @@ func (n *Node) sendPeerList(p *peer) error {
 		FromID:  n.id.ID,
 		Payload: proto.MustMarshal(pl),
 	}
-	return p.writer.Encode(env)
+	n.sendAsync(p, env)
+	return nil
 }
 
 // Broadcast sends a gossip mesage to all connected peers.
@@ -416,13 +427,12 @@ func (n *Node) Broadcast(g proto.Gossip) {
 func (n *Node) relay(originID string, env proto.Envelope) {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
+
 	for id, p := range n.peers {
 		if id == originID {
 			continue
 		}
-		if err := p.writer.Encode(env); err != nil {
-			n.logf("relay to %s failed: %v", id, err)
-		}
+		n.sendAsync(p, env)
 	}
 }
 
@@ -449,7 +459,8 @@ func (n *Node) sendNatRegister(p *peer) error {
 		FromID:  n.id.ID,
 		Payload: proto.MustMarshal(reg),
 	}
-	return p.writer.Encode(env)
+	n.sendAsync(p, env)
+	return nil
 }
 
 func (n *Node) handleNatRegister(p *peer, env proto.Envelope) {
@@ -513,9 +524,7 @@ func (n *Node) handleNatRelaySeed(fromPeer *peer, env proto.Envelope) {
 		Payload: env.Payload, // same NatRelay payload
 	}
 
-	if err := target.writer.Encode(fwdEnv); err != nil {
-		n.logf("NatRelay forward to %s failed: %v", msg.ToUserID, err)
-	}
+	n.sendAsync(target, fwdEnv)
 }
 
 func (n *Node) handleNatRelayClient(fromPeer *peer, env proto.Envelope) {

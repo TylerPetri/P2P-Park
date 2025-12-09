@@ -1,6 +1,38 @@
 package p2p
 
-import "p2p-park/internal/proto"
+import (
+	"context"
+	"p2p-park/internal/proto"
+)
+
+func (p *peer) writeLoop(ctx context.Context, n *Node) {
+	for {
+		select {
+		case env, ok := <-p.sendCh:
+			if !ok {
+				return
+			}
+			if err := p.writer.Encode(env); err != nil {
+				n.logf("write to %s failed: %v", p.id, err)
+				go n.removePeer(p.id)
+				return
+			}
+
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (n *Node) sendAsync(p *peer, env proto.Envelope) {
+	select {
+	case p.sendCh <- env:
+		// queued
+	default:
+		n.logf("peer %s send buffer full, dropping", p.id)
+		go n.removePeer(p.id)
+	}
+}
 
 func (n *Node) sendIdentify(p *peer) error {
 	id := n.id
@@ -15,7 +47,8 @@ func (n *Node) sendIdentify(p *peer) error {
 		FromID:  n.id.ID, // network ID (Noise hex)
 		Payload: proto.MustMarshal(ident),
 	}
-	return p.writer.Encode(env)
+	n.sendAsync(p, env)
+	return nil
 }
 
 func (n *Node) PeerDisplayName(id string) string {
