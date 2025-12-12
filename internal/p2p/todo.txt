@@ -1,3 +1,0 @@
-* peer cache file (~/.park-peers.json)
-* NAT traversal (UPnP / STUN)
-* topics/rooms
