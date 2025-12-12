@@ -2,6 +2,7 @@ package p2p
 
 import (
 	"context"
+	"fmt"
 	"p2p-park/internal/proto"
 )
 
@@ -24,6 +25,25 @@ func (p *peer) writeLoop(ctx context.Context, n *Node) {
 	}
 }
 
+// PeerCount returns the current number of connected peers.
+func (n *Node) PeerCount() int {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return len(n.peers)
+}
+
+// PeerIDs returns a snapshot of current peer IDs.
+func (n *Node) PeerIDs() []string {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+
+	ids := make([]string, 0, len(n.peers))
+	for id := range n.peers {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
 func (n *Node) sendAsync(p *peer, env proto.Envelope) {
 	select {
 	case p.sendCh <- env:
@@ -32,6 +52,20 @@ func (n *Node) sendAsync(p *peer, env proto.Envelope) {
 		n.logf("peer %s send buffer full, dropping", p.id)
 		go n.removePeer(p.id)
 	}
+}
+
+// SendToPeer sends an envelope to a peer by network ID.
+// It returns an error if the peer is not known.
+func (n *Node) SendToPeer(id string, env proto.Envelope) error {
+	n.mu.RLock()
+	p, ok := n.peers[id]
+	n.mu.RUnlock()
+	if !ok {
+		return fmt.Errorf("unknown peer %q", id)
+	}
+
+	n.sendAsync(p, env)
+	return nil
 }
 
 func (n *Node) sendIdentify(p *peer) error {
