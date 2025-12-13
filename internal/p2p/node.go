@@ -10,19 +10,20 @@ import (
 	"p2p-park/internal/crypto/noiseconn"
 	"p2p-park/internal/netx"
 	"p2p-park/internal/proto"
+	"p2p-park/internal/telemetry"
 	"sync"
 	"time"
 )
 
 type NodeConfig struct {
-	Name       string       // user-facing name
-	Network    netx.Network // transport implementation
-	BindAddr   string       // e.g. ":0" to choose random port
-	Bootstraps []netx.Addr  // known peers to try on startup
-	Protocol   string       // protocol version string
-	Logger     *log.Logger
-	Debug      bool // flag for showing hidden logs to debug
-	IsSeed     bool // if true, this node will keep NAT registry & relay
+	Name       string           // user-facing name
+	Network    netx.Network     // transport implementation
+	BindAddr   string           // e.g. ":0" to choose random port
+	Bootstraps []netx.Addr      // known peers to try on startup
+	Protocol   string           // protocol version string
+	Logger     telemetry.Logger // system logger
+	Debug      bool             // flag for showing hidden logs to debug
+	IsSeed     bool             // if true, this node will keep NAT registry & relay
 }
 
 type peer struct {
