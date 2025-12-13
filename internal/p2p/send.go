@@ -5,6 +5,38 @@ import (
 	"p2p-park/internal/proto"
 )
 
+type SendPolicy int
+
+const (
+	SendDrop       SendPolicy = iota // drop this message if buffer full
+	SendDisconnect                   // drop peer if buffer full
+)
+
+func (n *Node) sendAsyncWithPolicy(p *peer, env proto.Envelope, policy SendPolicy) {
+	select {
+	case <-p.ctx.Done():
+		// peer is closing; just drop
+		return
+	default:
+	}
+
+	select {
+	case p.sendCh <- env:
+		return
+	default:
+		if policy == SendDisconnect {
+			// Important: do not call removePeer synchronously here.
+			go n.removePeer(p.id)
+			n.Logf("dropping peer %s: send buffer full", p.id)
+		}
+		// else: drop the message
+	}
+}
+
+func (n *Node) sendAsync(p *peer, env proto.Envelope) {
+	n.sendAsyncWithPolicy(p, env, SendDisconnect)
+}
+
 func (n *Node) sendPeerList(p *peer) error {
 	pl := proto.PeerList{Peers: n.snapshotPeersInfo()}
 	env := proto.Envelope{
@@ -14,16 +46,6 @@ func (n *Node) sendPeerList(p *peer) error {
 	}
 	n.sendAsync(p, env)
 	return nil
-}
-
-func (n *Node) sendAsync(p *peer, env proto.Envelope) {
-	select {
-	case p.sendCh <- env:
-		// queued
-	default:
-		n.Logf("peer %s send buffer full, dropping", p.id)
-		go n.removePeer(p.id)
-	}
 }
 
 // SendToPeer sends an envelope to a peer by network ID.

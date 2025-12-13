@@ -14,19 +14,35 @@ func (n *Node) addPeer(p *peer) bool {
 }
 
 func (n *Node) removePeer(id string) {
-	n.mu.Lock()
-	defer n.mu.Unlock()
+	var p *peer
 
-	p, ok := n.peers[id]
-	if !ok {
+	n.mu.Lock()
+	p = n.peers[id]
+	if p != nil {
+		delete(n.peers, id)
+
+		if p.userID != "" {
+			if cur := n.natByUserID[p.userID]; cur == p {
+				delete(n.natByUserID, p.userID)
+			}
+		}
+	}
+	n.mu.Unlock()
+
+	if p == nil {
 		return
 	}
-	delete(n.peers, id)
 
-	close(p.sendCh)
-	_ = p.conn.Close()
+	// Make removal idempotent
+	p.once.Do(func() {
+		if p.cancel != nil {
+			p.cancel()
+		}
 
-	n.emit(Event{Type: EventPeerDisconnected, PeerID: p.id, PeerAddr: string(p.addr), PeerName: p.name})
+		_ = p.conn.Close()
+
+		n.emit(Event{Type: EventPeerDisconnected, PeerID: p.id, PeerAddr: string(p.addr), PeerName: p.name})
+	})
 }
 
 func (n *Node) snapshotPeersInfo() []proto.PeerInfo {

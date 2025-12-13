@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/json"
+	"io"
 	"log"
 	"p2p-park/internal/netx"
 	"p2p-park/internal/proto"
@@ -26,10 +27,13 @@ type peer struct {
 	id           string
 	addr         netx.Addr
 	observedAddr netx.Addr
-	conn         netx.Conn
+	conn         io.ReadWriteCloser // stream type for Noise secure encrypted
 	writer       *json.Encoder
 
 	sendCh chan proto.Envelope
+	ctx    context.Context
+	cancel context.CancelFunc
+	once   sync.Once
 
 	name    string
 	userPub ed25519.PublicKey
@@ -145,12 +149,16 @@ func (n *Node) Broadcast(g proto.Gossip) {
 
 func (n *Node) relay(originID string, env proto.Envelope) {
 	n.mu.RLock()
-	defer n.mu.RUnlock()
-
+	peers := make([]*peer, 0, len(n.peers))
 	for id, p := range n.peers {
-		if id == originID {
+		if id == originID || p == nil {
 			continue
 		}
+		peers = append(peers, p)
+	}
+	n.mu.RUnlock()
+
+	for _, p := range peers {
 		n.sendAsync(p, env)
 	}
 }
