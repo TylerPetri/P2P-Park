@@ -99,6 +99,18 @@ func (a *App) Run(ctx context.Context) error {
 	// CLI input loop
 	go a.readStdin(ctx)
 
+	// Event emitter
+	go func() {
+		for ev := range a.Node.Events() {
+			switch ev.Type {
+			case p2p.EventPeerConnected:
+				a.ui.Printf("[NET] peer connected: %s (%s)\n", ev.PeerName, ev.PeerAddr)
+			case p2p.EventPeerDisconnected:
+				a.ui.Printf("[NET] peer disconnected: %s\n", ev.PeerID)
+			}
+		}
+	}()
+
 	// Inbound loop (envelopes)
 	for {
 		select {

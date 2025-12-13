@@ -7,6 +7,23 @@ import (
 	"p2p-park/internal/proto"
 )
 
+func (n *Node) sendIdentify(p *peer) error {
+	id := n.id
+
+	ident := proto.Identify{
+		Name:    n.cfg.Name,
+		UserPub: id.SignPub,
+	}
+
+	env := proto.Envelope{
+		Type:    proto.MsgIdentify,
+		FromID:  n.id.ID, // network ID (Noise hex)
+		Payload: proto.MustMarshal(ident),
+	}
+	n.sendAsync(p, env)
+	return nil
+}
+
 func (n *Node) handleIdentify(p *peer, env proto.Envelope) {
 	var ident proto.Identify
 	if err := json.Unmarshal(env.Payload, &ident); err != nil {
