@@ -35,8 +35,7 @@ func (m *Manager) Run(n *p2p.Node) {
 		for {
 			// 1) LAN
 			listenAddr := n.ListenAddr()
-			nc := p2p.NodeConfig{}
-			name := nc.Name
+			name := n.Name()
 			addrs, err := DiscoverLANPeers(m.LANConfig, string(listenAddr), name)
 			if err != nil {
 				fmt.Printf("[DISCOVERY] LAN error: %v\n", err)

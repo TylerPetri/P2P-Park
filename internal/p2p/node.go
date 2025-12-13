@@ -97,6 +97,9 @@ func (n *Node) ListenAddr() netx.Addr { return n.addr }
 // Incoming returns a channel of messages for higher-level app logic.
 func (n *Node) Incoming() <-chan proto.Envelope { return n.incoming }
 
+// Name returns this node's name
+func (n *Node) Name() string { return n.cfg.Name }
+
 // Start brings the node online.
 func (n *Node) Start() error {
 	addr, err := n.cfg.Network.Listen(n.cfg.BindAddr)

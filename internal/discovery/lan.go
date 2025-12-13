@@ -98,7 +98,7 @@ func StartLANResponder(stop <-chan struct{}, cfg LANConfig, listenAddr, name str
 			resp := lanMessage{
 				Type:   "pong",
 				Name:   name,
-				Listen: listenAddr,
+				Listen: listenPortOnly(listenAddr),
 			}
 			data, _ := json.Marshal(resp)
 			_, _ = udpConn.WriteToUDP(data, addr)
@@ -130,11 +130,14 @@ func DiscoverLANPeers(cfg LANConfig, listenAddr, name string) ([]string, error) 
 	}
 	data, _ := json.Marshal(ping)
 
-	bcast := &net.UDPAddr{
-		IP:   net.IPv4bcast,
-		Port: cfg.Port,
+	targets := interfaceBroadcastAddrs(cfg.Port)
+	if len(targets) == 0 {
+		// fall back to limited broadcast
+		targets = append(targets, &net.UDPAddr{IP: net.IPv4bcast, Port: cfg.Port})
 	}
-	_, err = conn.WriteToUDP(data, bcast)
+	for _, dst := range targets {
+		_, err = conn.WriteToUDP(data, dst)
+	}
 	if err != nil {
 		var opErr *net.OpError
 		if errors.As(err, &opErr) && errors.Is(opErr.Err, syscall.EADDRNOTAVAIL) {
@@ -159,7 +162,7 @@ func DiscoverLANPeers(cfg LANConfig, listenAddr, name string) ([]string, error) 
 	buf := make([]byte, 1024)
 
 	for {
-		n, _, err := conn.ReadFromUDP(buf)
+		n, from, err := conn.ReadFromUDP(buf)
 		if err != nil {
 			if ne, ok := err.(net.Error); ok && ne.Timeout() {
 				break
@@ -174,15 +177,66 @@ func DiscoverLANPeers(cfg LANConfig, listenAddr, name string) ([]string, error) 
 		if msg.Type != "pong" {
 			continue
 		}
-		if msg.Listen == "" || msg.Listen == listenAddr {
+		full := normalizeListenFromPong(from, msg.Listen)
+		if full == "" || full == listenAddr || msg.Listen == listenAddr {
 			continue
 		}
 		if _, exists := seen[msg.Listen]; exists {
 			continue
 		}
 		seen[msg.Listen] = struct{}{}
-		out = append(out, msg.Listen)
+		out = append(out, full)
 	}
 
 	return out, nil
+}
+
+func interfaceBroadcastAddrs(port int) []*net.UDPAddr {
+	out := make([]*net.UDPAddr, 0, 8)
+
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return out
+	}
+
+	for _, it := range ifaces {
+		// skip down interfaces
+		if it.Flags&net.FlagUp == 0 {
+			continue
+		}
+		// skip point-to-point/tunnel-ish
+		if it.Flags&net.FlagPointToPoint != 0 {
+			continue
+		}
+
+		addrs, err := it.Addrs()
+		if err != nil {
+			continue
+		}
+
+		for _, a := range addrs {
+			ipnet, ok := a.(*net.IPNet)
+			if !ok || ipnet.IP == nil {
+				continue
+			}
+			ip4 := ipnet.IP.To4()
+			if ip4 == nil {
+				continue
+			}
+
+			// compute broadcast = ip | ^mask
+			mask := ipnet.Mask
+			if len(mask) != 4 {
+				continue
+			}
+			b := net.IPv4(
+				ip4[0]|^mask[0],
+				ip4[1]|^mask[1],
+				ip4[2]|^mask[2],
+				ip4[3]|^mask[3],
+			)
+			out = append(out, &net.UDPAddr{IP: b, Port: port})
+		}
+	}
+	return out
 }
