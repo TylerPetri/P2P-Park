@@ -10,7 +10,7 @@ import (
 func (n *Node) handleIdentify(p *peer, env proto.Envelope) {
 	var ident proto.Identify
 	if err := json.Unmarshal(env.Payload, &ident); err != nil {
-		n.logf("bad identify from %s: %v", p.id, err)
+		n.Logf("bad identify from %s: %v", p.id, err)
 		return
 	}
 
@@ -23,8 +23,8 @@ func (n *Node) handleIdentify(p *peer, env proto.Envelope) {
 	n.mu.Unlock()
 
 	if len(ident.UserPub) != ed25519.PublicKeySize {
-		n.logf("identify from %s has invalid user_pub length %d", p.id, len(ident.UserPub))
+		n.Logf("identify from %s has invalid user_pub length %d", p.id, len(ident.UserPub))
 	}
 
-	n.logf("peer %s identified as %q (userID=%s)", p.id, p.name, p.userID)
+	n.Logf("peer %s identified as %q (userID=%s)", p.id, p.name, p.userID)
 }

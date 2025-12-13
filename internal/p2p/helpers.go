@@ -14,7 +14,7 @@ func (p *peer) writeLoop(ctx context.Context, n *Node) {
 				return
 			}
 			if err := p.writer.Encode(env); err != nil {
-				n.logf("write to %s failed: %v", p.id, err)
+				n.Logf("write to %s failed: %v", p.id, err)
 				go n.removePeer(p.id)
 				return
 			}
@@ -49,7 +49,7 @@ func (n *Node) sendAsync(p *peer, env proto.Envelope) {
 	case p.sendCh <- env:
 		// queued
 	default:
-		n.logf("peer %s send buffer full, dropping", p.id)
+		n.Logf("peer %s send buffer full, dropping", p.id)
 		go n.removePeer(p.id)
 	}
 }

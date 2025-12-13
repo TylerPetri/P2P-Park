@@ -11,7 +11,7 @@ func (n *Node) discoveryLoop() {
 		if addr == "" {
 			continue
 		}
-		n.logf("bootstrap: dialing %s", addr)
+		n.Logf("bootstrap: dialing %s", addr)
 		n.ConnectTo(addr)
 	}
 
@@ -40,7 +40,7 @@ func (n *Node) discoveryTick() {
 		if n.hasPeer(string(addr)) {
 			continue
 		}
-		n.logf("discovery: dial bootstrap %s", addr)
+		n.Logf("discovery: dial bootstrap %s", addr)
 		n.ConnectTo(addr)
 	}
 }
