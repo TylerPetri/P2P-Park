@@ -3,41 +3,13 @@ package p2p
 import (
 	"encoding/hex"
 	"encoding/json"
-	"io"
-	"log"
 	"sync"
 	"testing"
 	"time"
 
 	"p2p-park/internal/crypto/channel"
-	"p2p-park/internal/netx"
 	"p2p-park/internal/proto"
 )
-
-// Make a node for tests (noisy logs off).
-func newEncTestNode(t *testing.T, name string) *Node {
-	t.Helper()
-
-	logger := log.New(io.Discard, "", 0)
-
-	n, err := NewNode(NodeConfig{
-		Name:       name,
-		Network:    netx.NewTCPNetwork(),
-		BindAddr:   "127.0.0.1:0",
-		Bootstraps: nil,
-		Protocol:   "test/0",
-		Logger:     logger,
-		Debug:      true,
-		IsSeed:     false,
-	})
-	if err != nil {
-		t.Fatalf("NewNode(%s) error: %v", name, err)
-	}
-	if err := n.Start(); err != nil {
-		t.Fatalf("Start(%s) error: %v", name, err)
-	}
-	return n
-}
 
 // drain incoming so writers don't stall if channels fill.
 // We still "inspect" enc:gossip messages to stress decrypt.
@@ -78,11 +50,8 @@ func drainAndDecrypt(
 // It simulates heavy concurrent encrypted channel usage (create/join/encrypt/broadcast)
 // while draining incoming so backpressure doesn't hide races.
 func TestEncryptedChannelStressRaceHarness(t *testing.T) {
-	n1 := newEncTestNode(t, "n1")
-	defer n1.Stop()
-
-	n2 := newEncTestNode(t, "n2")
-	defer n2.Stop()
+	n1 := newTestNode(t, "n1")
+	n2 := newTestNode(t, "n2")
 
 	if err := n2.ConnectTo(n1.ListenAddr()); err != nil {
 		t.Fatalf("ConnectTo error: %v", err)
@@ -190,6 +159,7 @@ func TestEncryptedChannelStressRaceHarness(t *testing.T) {
 					body, _ := json.Marshal(em)
 					if err == nil {
 						g := proto.Gossip{
+							ID:      NewMsgID(),
 							Channel: "enc:" + chName,
 							Body:    body,
 						}
@@ -211,6 +181,7 @@ func TestEncryptedChannelStressRaceHarness(t *testing.T) {
 					body, _ := json.Marshal(em)
 					if err == nil {
 						g := proto.Gossip{
+							ID:      NewMsgID(),
 							Channel: "enc:" + chName,
 							Body:    body,
 						}

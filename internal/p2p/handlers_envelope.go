@@ -25,6 +25,14 @@ func (n *Node) handleEnvelope(p *peer, env proto.Envelope) {
 			n.ConnectTo(netx.Addr(pi.Addr))
 		}
 	case proto.MsgGossip:
+		var g proto.Gossip
+		if err := json.Unmarshal(env.Payload, &g); err != nil {
+			return
+		}
+		if n.seen.Seen(g.ID) {
+			return
+		}
+
 		select {
 		case n.incoming <- env:
 		default:

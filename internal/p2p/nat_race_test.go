@@ -3,65 +3,12 @@ package p2p
 import (
 	"encoding/hex"
 	"encoding/json"
-	"io"
-	"log"
 	"sync"
 	"testing"
 	"time"
 
-	"p2p-park/internal/netx"
 	"p2p-park/internal/proto"
 )
-
-// Seed node for NAT.
-func newTestSeedNode(t *testing.T, name string) *Node {
-	t.Helper()
-
-	logger := log.New(io.Discard, "", 0)
-
-	n, err := NewNode(NodeConfig{
-		Name:       name,
-		Network:    netx.NewTCPNetwork(),
-		BindAddr:   "127.0.0.1:0",
-		Bootstraps: nil,
-		Protocol:   "test/0",
-		Logger:     logger,
-		Debug:      true,
-		IsSeed:     true,
-	})
-	if err != nil {
-		t.Fatalf("NewNode(seed %s) error: %v", name, err)
-	}
-	if err := n.Start(); err != nil {
-		t.Fatalf("Start(seed %s) error: %v", name, err)
-	}
-	return n
-}
-
-// NAT-ed node (non-seed) that knows about the seed.
-func newTestNatNode(t *testing.T, name string, seedAddr netx.Addr) *Node {
-	t.Helper()
-
-	logger := log.New(io.Discard, "", 0)
-
-	n, err := NewNode(NodeConfig{
-		Name:       name,
-		Network:    netx.NewTCPNetwork(),
-		BindAddr:   "127.0.0.1:0",
-		Bootstraps: []netx.Addr{seedAddr},
-		Protocol:   "test/0",
-		Logger:     logger,
-		Debug:      true,
-		IsSeed:     false,
-	})
-	if err != nil {
-		t.Fatalf("NewNode(%s) error: %v", name, err)
-	}
-	if err := n.Start(); err != nil {
-		t.Fatalf("Start(%s) error: %v", name, err)
-	}
-	return n
-}
 
 // Wait until seed.natByUserID has at least `want` entries.
 func waitForNatRegistry(t *testing.T, seed *Node, want int) {
@@ -83,22 +30,6 @@ func waitForNatRegistry(t *testing.T, seed *Node, want int) {
 	}
 }
 
-// Simple incoming drainer, so Incoming() never blocks writers.
-func drainIncomingForever(n *Node, done <-chan struct{}) {
-	go func() {
-		for {
-			select {
-			case <-done:
-				return
-			case _, ok := <-n.Incoming():
-				if !ok {
-					return
-				}
-			}
-		}
-	}()
-}
-
 // Helper to find the seed-side *peer for a given node ID.
 func findPeerOnSeed(t *testing.T, seed *Node, nodeID string) *peer {
 	t.Helper()
@@ -118,14 +49,10 @@ func findPeerOnSeed(t *testing.T, seed *Node, nodeID string) *peer {
 // This harness stresses NAT relay logic on the seed and the per-peer writers
 // under go test -race. It’s about concurrency, not semantic correctness.
 func TestNATRelayRaceHarness(t *testing.T) {
-	seed := newTestSeedNode(t, "seed")
-	defer seed.Stop()
+	seed := newTestNode(t, "seed", WithSeed(true))
 
-	nA := newTestNatNode(t, "A", seed.ListenAddr())
-	defer nA.Stop()
-
-	nB := newTestNatNode(t, "B", seed.ListenAddr())
-	defer nB.Stop()
+	nA := newTestNode(t, "A", WithBootstraps(seed.ListenAddr()))
+	nB := newTestNode(t, "B", WithBootstraps(seed.ListenAddr()))
 
 	// Make sure they connect to the seed as well (in addition to Bootstraps).
 	if err := nA.ConnectTo(seed.ListenAddr()); err != nil {
@@ -142,9 +69,9 @@ func TestNATRelayRaceHarness(t *testing.T) {
 	defer close(done)
 
 	// Drain incoming queues so that NAT relay messages don't block.
-	drainIncomingForever(seed, done)
-	drainIncomingForever(nA, done)
-	drainIncomingForever(nB, done)
+	drainIncomingForever(t, seed, done)
+	drainIncomingForever(t, nA, done)
+	drainIncomingForever(t, nB, done)
 
 	// Build a NatRelay envelope as if A is sending to B.
 	aID := nA.ID() // Noise network ID (p.id)

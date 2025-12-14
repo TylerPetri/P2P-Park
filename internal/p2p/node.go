@@ -10,6 +10,7 @@ import (
 	"p2p-park/internal/proto"
 	"p2p-park/internal/telemetry"
 	"sync"
+	"time"
 )
 
 type NodeConfig struct {
@@ -63,6 +64,7 @@ type Node struct {
 	natByUserID map[string]*peer    // only meaningful when cfg.IsSeed == true
 
 	events chan Event
+	seen   *seenCache
 }
 
 func NewNode(cfg NodeConfig) (*Node, error) {
@@ -82,6 +84,7 @@ func NewNode(cfg NodeConfig) (*Node, error) {
 		cancel:   cancel,
 		incoming: make(chan proto.Envelope, 128),
 		events:   make(chan Event, 128),
+		seen:     newSeenCache(30 * time.Second),
 	}
 	if cfg.IsSeed {
 		n.natByUserID = make(map[string]*peer)

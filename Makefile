@@ -12,3 +12,6 @@ bootstrap:
 
 race:
 	GOFLAGS=-race go test ./...
+
+cleancache:
+	@go clean -cache

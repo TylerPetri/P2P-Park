@@ -41,6 +41,7 @@ type PeerList struct {
 
 // Gossip is our generics "app-level broadcast" payload.
 type Gossip struct {
+	ID      string          `json:"id"`
 	Channel string          `json:"channel"`
 	Body    json.RawMessage `json:"body"`
 }

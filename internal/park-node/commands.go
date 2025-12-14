@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"p2p-park/internal/crypto/channel"
+	"p2p-park/internal/p2p"
 	"p2p-park/internal/proto"
 )
 
@@ -84,6 +85,7 @@ func (a *App) handleCommand(line string) {
 		}
 		body, _ := json.Marshal(chat)
 		a.Node.Broadcast(proto.Gossip{
+			ID:      p2p.NewMsgID(),
 			Channel: "global",
 			Body:    body,
 		})
@@ -203,6 +205,7 @@ func (a *App) sendEncrypted(chName, msg string) {
 
 	body, _ := json.Marshal(em)
 	a.Node.Broadcast(proto.Gossip{
+		ID:      p2p.NewMsgID(),
 		Channel: "enc:" + chName,
 		Body:    body,
 	})

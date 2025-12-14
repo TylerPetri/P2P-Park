@@ -1,8 +1,6 @@
 package p2p
 
 func (p *peer) writeLoop(n *Node) {
-	defer close(p.sendCh)
-
 	for {
 		select {
 		case <-p.ctx.Done():

@@ -145,7 +145,7 @@ func (a *App) logf(format string, args ...any) {
 
 func (a *App) broadcastPoints(snap proto.SignedPointsSnapshot) {
 	body, _ := json.Marshal(snap)
-	a.Node.Broadcast(proto.Gossip{Channel: "points", Body: body})
+	a.Node.Broadcast(proto.Gossip{ID: p2p.NewMsgID(), Channel: "points", Body: body})
 }
 
 // Helper used by /me
