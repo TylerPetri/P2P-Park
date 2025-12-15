@@ -48,6 +48,12 @@ func (n *Node) handleEnvelope(p *peer, env proto.Envelope) {
 		} else {
 			n.handleNatRelayClient(p, env)
 		}
+	case proto.MsgDHT:
+		if n.dht != nil {
+			n.dht.HandleDHT(n, p.id, string(p.addr), p.name, env)
+		}
+		return
+
 	default:
 		select {
 		case n.incoming <- env:

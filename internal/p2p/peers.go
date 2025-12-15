@@ -8,6 +8,9 @@ func (n *Node) addPeer(p *peer) bool {
 	if _, exists := n.peers[p.id]; exists || p.id == n.id.ID {
 		return false
 	}
+	if n.dht != nil {
+		n.dht.OnPeerSeen(p.id, string(p.addr), p.name)
+	}
 	n.peers[p.id] = p
 	n.emit(Event{Type: EventPeerConnected, PeerID: p.id, PeerAddr: string(p.addr), PeerName: p.name})
 	return true

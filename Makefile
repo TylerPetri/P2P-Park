@@ -3,6 +3,7 @@ ADDR=:12345
 NAME=Ian
 #Vee
 #Sydney
+TEST_DIR=./internal/dht
 
 run:
 	@go run ./cmd/park-node -name ${NAME}
@@ -12,6 +13,9 @@ bootstrap:
 
 race:
 	GOFLAGS=-race go test ./...
+
+racedir:
+	GOFLAGS=-race go test -count=1 ${TEST_DIR} -v
 
 cleancache:
 	@go clean -cache

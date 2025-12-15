@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"log"
+	"p2p-park/internal/dht"
 	"p2p-park/internal/netx"
 	"p2p-park/internal/proto"
 	"p2p-park/internal/telemetry"
@@ -65,6 +66,8 @@ type Node struct {
 
 	events chan Event
 	seen   *seenCache
+
+	dht *dht.DHT
 }
 
 func NewNode(cfg NodeConfig) (*Node, error) {
@@ -72,6 +75,10 @@ func NewNode(cfg NodeConfig) (*Node, error) {
 		cfg.Logger = log.Default()
 	}
 	id, err := NewIdentity()
+	if err != nil {
+		return nil, err
+	}
+	dd, err := dht.New(id.ID, dht.WithStore(""))
 	if err != nil {
 		return nil, err
 	}
@@ -85,6 +92,7 @@ func NewNode(cfg NodeConfig) (*Node, error) {
 		incoming: make(chan proto.Envelope, 128),
 		events:   make(chan Event, 128),
 		seen:     newSeenCache(30 * time.Second),
+		dht:      dd,
 	}
 	if cfg.IsSeed {
 		n.natByUserID = make(map[string]*peer)
@@ -121,7 +129,11 @@ func (n *Node) Start() error {
 
 	go n.acceptLoop()
 
+	n.coldStartDHTBootstrap()
+
 	go n.discoveryLoop()
+
+	n.startDHTBootstrapLoop(DefaultDHTBootstrapConfig())
 
 	return nil
 }
