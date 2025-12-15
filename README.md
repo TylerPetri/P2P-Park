@@ -10,6 +10,12 @@ P2P-Park is an exploration of **production-grade distributed systems**, **applie
 
 ---
 
+## 🚀 Status
+Actively in development.  
+Implementing a Kademlia-like DHT
+
+---
+
 ## ✨ Features
 
 ### 🔐 Noise-Secured Transport
@@ -62,21 +68,6 @@ For reviewers and hiring managers, the repository highlights:
 - Separation of user identity vs device identity  
 - Pluggable encrypted channels  
 
-### ✔ Prepared for future “serious” work
-P2P-Park contains all the primitives needed to evolve into:
-
-- Signal-style **Double Ratchet** sessions  
-- X3DH-like identity prekey bundles (serverless variant)  
-- **MLS-style TreeKEM** group messaging  
-- State-sync systems  
-- Multi-device secure accounts  
-
-This is the foundation for a **modern distributed secure messaging system**, built from the ground up.
-
 ---
-
-## 🚀 Status
-Actively in development.  
-The codebase is structured professionally and meant to grow into a full ecosystem.
 
 PRs and design discussions are welcome.
