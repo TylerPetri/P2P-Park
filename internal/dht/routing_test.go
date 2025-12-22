@@ -53,7 +53,7 @@ func TestRoutingTable_ClosestSortedByDistance(t *testing.T) {
 	// Insert enough random peers.
 	for i := 0; i < 50; i++ {
 		id := randID(t)
-		rt.Upsert(id, "127.0.0.1:1234", "p")
+		rt.Upsert(id, randID(t).Hex(), "127.0.0.1:1234", "p")
 	}
 
 	got := rt.Closest(target, 10)
@@ -66,8 +66,8 @@ func TestRoutingTable_ClosestSortedByDistance(t *testing.T) {
 
 	// Verify sorted ascending by XOR distance to target.
 	for i := 1; i < len(got); i++ {
-		prev := xorBytes(got[i-1].ID, target)
-		cur := xorBytes(got[i].ID, target)
+		prev := xorBytes(got[i-1].NodeID, target)
+		cur := xorBytes(got[i].NodeID, target)
 		if bytes.Compare(prev[:], cur[:]) > 0 {
 			t.Fatalf("closest not sorted at i=%d", i)
 		}

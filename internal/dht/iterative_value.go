@@ -1,6 +1,7 @@
 package dht
 
 import (
+	"context"
 	"net"
 	"sort"
 	"time"
@@ -8,15 +9,15 @@ import (
 	"p2p-park/internal/proto"
 )
 
-type LookupConfig struct {
+type ValueLookupConfig struct {
 	Alpha      int
 	K          int
 	RPCTimeout time.Duration
 	MaxRounds  int
 }
 
-func DefaultLookupConfig() LookupConfig {
-	return LookupConfig{
+func DefaultValueLookupConfig() ValueLookupConfig {
+	return ValueLookupConfig{
 		Alpha:      3,
 		K:          20,
 		RPCTimeout: 1200 * time.Millisecond,
@@ -24,8 +25,12 @@ func DefaultLookupConfig() LookupConfig {
 	}
 }
 
-// IterativeFindNode performs a Kademlia-style iterative lookup.
-func (d *DHT) IterativeFindNode(n Sender, targetHex string, cfg LookupConfig) ([]proto.DHTNode, error) {
+func (d *DHT) IterativeFindValue(ctx context.Context, n Sender, key [32]byte, cfg ValueLookupConfig) (*proto.DHTRecord, bool, error) {
+	if rec, ok := d.rs.Get(key, time.Now()); ok {
+		ok = true
+		return rec, true, nil
+	}
+
 	if cfg.Alpha <= 0 {
 		cfg.Alpha = 3
 	}
@@ -39,15 +44,13 @@ func (d *DHT) IterativeFindNode(n Sender, targetHex string, cfg LookupConfig) ([
 		cfg.MaxRounds = 32
 	}
 
-	target, err := ParseNodeIDHex(targetHex)
-	if err != nil {
-		return nil, err
-	}
+	target := NodeID(key)
+	keyHex := KeyHex(key)
 
 	start := time.Now()
 	queries := 0
 	ok := false
-	defer func() { d.metrics.ObserveLookup("FIND_NODE", queries, time.Since(start), ok) }()
+	defer func() { d.metrics.ObserveLookup("FIND_VALUE", queries, time.Since(start), ok) }()
 
 	const (
 		stUnqueried = iota
@@ -88,12 +91,15 @@ func (d *DHT) IterativeFindNode(n Sender, targetHex string, cfg LookupConfig) ([
 	}
 
 	for round := 0; round < cfg.MaxRounds; round++ {
-		cands := sorted()
-		if len(cands) == 0 {
-			return nil, nil
+		if err := ctx.Err(); err != nil {
+			return nil, false, err
 		}
 
-		// Pick up to alpha unqueried among closest window (K*2 prevents stalls).
+		cands := sorted()
+		if len(cands) == 0 {
+			return nil, false, nil
+		}
+
 		limit := len(cands)
 		if limit > cfg.K*2 {
 			limit = cfg.K * 2
@@ -119,7 +125,7 @@ func (d *DHT) IterativeFindNode(n Sender, targetHex string, cfg LookupConfig) ([
 				}
 			}
 			if !left {
-				break
+				return nil, false, nil
 			}
 			continue
 		}
@@ -135,25 +141,33 @@ func (d *DHT) IterativeFindNode(n Sender, targetHex string, cfg LookupConfig) ([
 		for _, c := range toQuery {
 			peerID := c.node.PeerID
 			go func(c *cand, pid string) {
-				resp, err := d.QueryFindNode(n, pid, targetHex, cfg.RPCTimeout)
+				resp, err := d.QueryFindValue(n, pid, keyHex, cfg.RPCTimeout)
 				resCh <- result{c: c, w: resp, err: err}
 			}(c, peerID)
 		}
 
 		for i := 0; i < len(toQuery); i++ {
 			r := <-resCh
-			if r.err != nil || r.w.Kind != "NODES" {
+			if r.err != nil || r.w.Kind != "VALUE" {
 				r.c.state = stFailed
 				continue
 			}
 			r.c.state = stDone
 
-			// Cap ingestion to mitigate poisoning.
+			if r.w.Record != nil {
+				if err := d.ValidateRecordAgainstKey(key, r.w.Record); err == nil {
+					_ = d.rs.Put(key, r.w.Record, time.Now())
+					ok = true
+					return r.w.Record, true, nil
+				}
+				r.c.state = stFailed
+				continue
+			}
+
 			nodes := r.w.Nodes
 			if len(nodes) > cfg.K*2 {
 				nodes = nodes[:cfg.K*2]
 			}
-
 			for _, nd := range nodes {
 				if nd.NodeID == "" || nd.PeerID == "" || nd.Addr == "" {
 					continue
@@ -167,7 +181,6 @@ func (d *DHT) IterativeFindNode(n Sender, targetHex string, cfg LookupConfig) ([
 				if _, ok := seen[nd.NodeID]; ok {
 					continue
 				}
-
 				id, err := ParseNodeIDHex(nd.NodeID)
 				if err != nil {
 					continue
@@ -182,7 +195,6 @@ func (d *DHT) IterativeFindNode(n Sender, targetHex string, cfg LookupConfig) ([
 			}
 		}
 
-		// Bound candidate set.
 		cands = sorted()
 		if len(cands) > cfg.K*8 {
 			cands = cands[:cfg.K*8]
@@ -194,14 +206,5 @@ func (d *DHT) IterativeFindNode(n Sender, targetHex string, cfg LookupConfig) ([
 		}
 	}
 
-	cands := sorted()
-	if len(cands) > cfg.K {
-		cands = cands[:cfg.K]
-	}
-	out := make([]proto.DHTNode, 0, len(cands))
-	for _, c := range cands {
-		out = append(out, c.node)
-	}
-	ok = true
-	return out, nil
+	return nil, false, nil
 }

@@ -29,7 +29,7 @@ func TestDHTBootstrap_ExpandsFromOnePeer(t *testing.T) {
 		t.Fatalf("IterativeFindNode: %v", err)
 	}
 	for _, ni := range nodes {
-		if ni.ID == c.ID() && ni.Addr != "" {
+		if ni.NodeID == c.ID() && ni.Addr != "" {
 			_ = a.ConnectTo(netx.Addr(ni.Addr))
 			break
 		}

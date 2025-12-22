@@ -34,15 +34,14 @@ func (f *fakeSender) Logf(format string, args ...any) {
 }
 
 func TestHandler_PingPong(t *testing.T) {
-	// self ID must be 64 hex chars (32 bytes)
-	self := MustParseNodeIDHex("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f").Hex()
+	selfPeerID := MustParseNodeIDHex("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f").Hex()
 
-	h, err := New(self)
+	h, err := New(selfPeerID)
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}
 
-	n := &fakeSender{selfID: self}
+	n := &fakeSender{selfID: selfPeerID}
 
 	req := proto.DHTWire{
 		Kind:  "PING",
@@ -76,23 +75,27 @@ func TestHandler_PingPong(t *testing.T) {
 }
 
 func TestHandler_FindNode_ReturnsClosest(t *testing.T) {
-	self := MustParseNodeIDHex("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f").Hex()
+	selfPeerID := MustParseNodeIDHex("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f").Hex()
 
-	h, err := New(self)
+	h, err := New(selfPeerID)
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}
 
 	// Seed routing table with known nodes.
-	id1 := MustParseNodeIDHex("1111111111111111111111111111111111111111111111111111111111111111")
-	id2 := MustParseNodeIDHex("2222222222222222222222222222222222222222222222222222222222222222")
-	id3 := MustParseNodeIDHex("3333333333333333333333333333333333333333333333333333333333333333")
+	peer1 := MustParseNodeIDHex("1111111111111111111111111111111111111111111111111111111111111111").Hex()
+	peer2 := MustParseNodeIDHex("2222222222222222222222222222222222222222222222222222222222222222").Hex()
+	peer3 := MustParseNodeIDHex("3333333333333333333333333333333333333333333333333333333333333333").Hex()
 
-	h.rt.Upsert(id1, "10.0.0.1:1001", "n1")
-	h.rt.Upsert(id2, "10.0.0.2:1002", "n2")
-	h.rt.Upsert(id3, "10.0.0.3:1003", "n3")
+	id1, _ := NodeIDFromPeerID(peer1)
+	id2, _ := NodeIDFromPeerID(peer2)
+	id3, _ := NodeIDFromPeerID(peer3)
 
-	n := &fakeSender{selfID: self}
+	h.rt.Upsert(id1, peer1, "10.0.0.1:1001", "n1")
+	h.rt.Upsert(id2, peer2, "10.0.0.2:1002", "n2")
+	h.rt.Upsert(id3, peer3, "10.0.0.3:1003", "n3")
+
+	n := &fakeSender{selfID: selfPeerID}
 
 	from := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	target := id2.Hex()
@@ -132,7 +135,7 @@ func TestHandler_FindNode_ReturnsClosest(t *testing.T) {
 	// Ensure the target itself is present (since we inserted it).
 	found := false
 	for _, nd := range got.Nodes {
-		if nd.ID == target {
+		if nd.NodeID == target {
 			found = true
 			if nd.Addr != "10.0.0.2:1002" {
 				t.Fatalf("expected addr for target node, got %s", nd.Addr)

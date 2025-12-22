@@ -69,13 +69,13 @@ func (n *Node) startDHTBootstrapLoop(cfg DHTBootstrapConfig) {
 
 					// Dial what we learned.
 					for _, ni := range nodes {
-						if ni.ID == "" || ni.Addr == "" {
+						if ni.NodeID == "" || ni.Addr == "" {
 							continue
 						}
-						if ni.ID == n.ID() {
+						if ni.NodeID == n.ID() {
 							continue
 						}
-						if n.hasPeer(ni.ID) {
+						if n.hasPeer(ni.NodeID) {
 							continue
 						}
 						_ = n.ConnectTo(netx.Addr(ni.Addr))

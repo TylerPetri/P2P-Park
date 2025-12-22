@@ -1,6 +1,7 @@
 package p2p
 
 import (
+	"p2p-park/internal/dht"
 	"testing"
 	"time"
 )
@@ -16,23 +17,24 @@ func TestDHT_QueryFindNode_Triangle(t *testing.T) {
 		t.Fatalf("expected dht enabled on all nodes")
 	}
 
-	// One-hop request: A asks B for nodes close to C.
-	resp, err := a.dhtAccessor().QueryFindNode(a, b.ID(), c.ID(), 1500*time.Millisecond)
+	cNodeID, err := dht.NodeIDFromPeerID(c.ID())
 	if err != nil {
-		t.Fatalf("QueryFindNode: %v", err)
+		t.Fatalf("failed to derive node id from peer id: %v", err)
 	}
-	if resp.Kind != "NODES" {
-		t.Fatalf("expected NODES, got %q", resp.Kind)
+
+	resp, err := a.dhtAccessor().QueryFindNode(a, b.ID(), cNodeID.Hex(), 1500*time.Millisecond)
+	if err != nil {
+		t.Fatalf("QueryFindNode error: %v", err)
 	}
 
 	found := false
 	for _, nd := range resp.Nodes {
-		if nd.ID == c.ID() {
+		if nd.PeerID == c.ID() {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Fatalf("expected response to include target %s; nodes=%+v", c.ID(), resp.Nodes)
+		t.Fatalf("expected response to include target peer %s; nodes=%+v", c.ID(), resp.Nodes)
 	}
 }
