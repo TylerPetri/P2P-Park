@@ -18,33 +18,26 @@ func (n *Node) addPeer(p *peer) bool {
 	return true
 }
 
-func deleteIfSame(m map[string]*peer, key string, p *peer) {
-	if m == nil || key == "" || p == nil {
-		return
-	}
-	if cur, ok := m[key]; ok && cur == p {
-		delete(m, key)
-	}
-}
-
 func (n *Node) removePeer(id string) {
 	var p *peer
-	var uid string
 
 	n.mu.Lock()
 	p = n.peers[id]
-	if p != nil {
-		delete(n.peers, id)
-		uid = p.userID
-
-		deleteIfSame(n.natByUserID, uid, p)
-		deleteIfSame(n.peersByUserID, uid, p)
-	}
-	n.mu.Unlock()
-
 	if p == nil {
+		n.mu.Unlock()
 		return
 	}
+	delete(n.peers, id)
+
+	if uid := p.userID; uid != "" {
+		if cur := n.natByUserID[uid]; cur == p {
+			delete(n.natByUserID, uid)
+		}
+		if cur := n.peersByUserID[uid]; cur == p {
+			delete(n.peersByUserID, uid)
+		}
+	}
+	n.mu.Unlock()
 
 	p.once.Do(func() {
 		if p.cancel != nil {

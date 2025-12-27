@@ -102,23 +102,14 @@ func NewNode(cfg NodeConfig) (*Node, error) {
 	return n, nil
 }
 
-// ID returns this node's peer ID.
-func (n *Node) ID() string { return n.id.ID }
-
-// Identity returns the node's identity (public/private keypair).
-func (n *Node) Identity() *Identity { return n.id }
-
-// ListenAddr returns where this node is listening.
-func (n *Node) ListenAddr() netx.Addr { return n.addr }
-
-// Incoming returns a channel of messages for higher-level app logic.
+// TODO: clean methods
+func (n *Node) ID() string                      { return n.id.ID }
+func (n *Node) Identity() *Identity             { return n.id }
+func (n *Node) ListenAddr() netx.Addr           { return n.addr }
 func (n *Node) Incoming() <-chan proto.Envelope { return n.incoming }
-
-// Name returns this node's name
-func (n *Node) Name() string { return n.cfg.Name }
-
-// Events return a channel of events for logging
-func (n *Node) Events() <-chan Event { return n.events }
+func (n *Node) Name() string                    { return n.cfg.Name }
+func (n *Node) Events() <-chan Event            { return n.events }
+func (n *Node) Debug() bool                     { return n.cfg.Debug }
 
 // Start brings the node online.
 func (n *Node) Start() error {

@@ -63,7 +63,9 @@ func (m *Manager) Run(n *p2p.Node) {
 
 				go func(addr string) {
 					if err := n.ConnectTo(netx.Addr(addr)); err != nil {
-						fmt.Printf("[DISCOVERY] connect to %s failed: %v\n", addr, err)
+						if n.Debug() {
+							fmt.Printf("[DISCOVERY] connect to %s failed: %v\n", addr, err)
+						}
 						m.Store.NoteFailure(addr)
 						return
 					}
