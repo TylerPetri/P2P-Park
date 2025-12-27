@@ -9,7 +9,9 @@ import (
 	"sync"
 	"time"
 
+	"p2p-park/internal/app/grants"
 	"p2p-park/internal/app/points"
+	"p2p-park/internal/app/quiz"
 	"p2p-park/internal/crypto/channel"
 	"p2p-park/internal/discovery"
 	"p2p-park/internal/netx"
@@ -30,6 +32,12 @@ type App struct {
 
 	// Points engine
 	Points *points.Engine
+
+	// Grant-based scoring (quiz awards)
+	Ledger *grants.Ledger
+
+	// Quiz engine
+	Quiz *quiz.Engine
 
 	// Encrypted channels
 	encMu       sync.RWMutex
@@ -57,6 +65,9 @@ func New(cfg Config, logger *log.Logger) (*App, error) {
 
 	id := n.Identity()
 	pe := points.NewEngine(cfg.Name, id.SignPriv, id.SignPub)
+	qe := quiz.NewEngine(cfg.Name, id.SignPriv, id.SignPub)
+	ld := grants.NewLedger()
+	ld.NoteName(hex.EncodeToString(id.SignPub), cfg.Name)
 
 	return &App{
 		cfg:         cfg,
@@ -65,6 +76,8 @@ func New(cfg Config, logger *log.Logger) (*App, error) {
 		Node:        n,
 		stopLAN:     make(chan struct{}),
 		Points:      pe,
+		Quiz:        qe,
+		Ledger:      ld,
 		encChannels: make(map[string]channel.ChannelKey),
 		otherPoints: make(map[string]proto.PointsSnapshot),
 	}, nil
@@ -140,7 +153,7 @@ func (a *App) logf(format string, args ...any) {
 		a.logger.Printf(format, args...)
 		return
 	}
-	a.logger.Printf(format+"\n", args...)
+	log.Printf(format+"\n", args...)
 }
 
 func (a *App) broadcastPoints(snap proto.SignedPointsSnapshot) {

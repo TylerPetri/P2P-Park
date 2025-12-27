@@ -55,8 +55,9 @@ type Node struct {
 	id   *Identity
 	addr netx.Addr
 
-	mu    sync.RWMutex
-	peers map[string]*peer
+	mu            sync.RWMutex
+	peers         map[string]*peer
+	peersByUserID map[string]*peer
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -84,15 +85,16 @@ func NewNode(cfg NodeConfig) (*Node, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	n := &Node{
-		cfg:      cfg,
-		id:       id,
-		peers:    make(map[string]*peer),
-		ctx:      ctx,
-		cancel:   cancel,
-		incoming: make(chan proto.Envelope, 128),
-		events:   make(chan Event, 128),
-		seen:     newSeenCache(30 * time.Second),
-		dht:      dd,
+		cfg:           cfg,
+		id:            id,
+		peers:         make(map[string]*peer),
+		peersByUserID: make(map[string]*peer),
+		ctx:           ctx,
+		cancel:        cancel,
+		incoming:      make(chan proto.Envelope, 128),
+		events:        make(chan Event, 128),
+		seen:          newSeenCache(30 * time.Second),
+		dht:           dd,
 	}
 	if cfg.IsSeed {
 		n.natByUserID = make(map[string]*peer)

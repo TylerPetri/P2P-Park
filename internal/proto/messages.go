@@ -5,12 +5,15 @@ import "encoding/json"
 type MessageType string
 
 const (
-	MsgHello       MessageType = "hello"
-	MsgPeerList    MessageType = "peer_list"
-	MsgGossip      MessageType = "gossip" // generics broadcast payload
-	MsgIdentify    MessageType = "identify"
-	MsgNatRegister MessageType = "nat_register"
-	MsgNatRelay    MessageType = "nat_relay"
+	MsgHello             MessageType = "hello"
+	MsgPeerList          MessageType = "peer_list"
+	MsgGossip            MessageType = "gossip"
+	MsgIdentify          MessageType = "identify"
+	MsgNatRegister       MessageType = "nat_register"
+	MsgNatRelay          MessageType = "nat_relay"
+	MsgGrantSyncSummary  MessageType = "grant_sync_summary"
+	MsgGrantSyncRequest  MessageType = "grant_sync_request"
+	MsgGrantSyncResponse MessageType = "grant_sync_response"
 )
 
 type Envelope struct {
@@ -95,4 +98,18 @@ type NatRegister struct {
 type NatRelay struct {
 	ToUserID string          `json:"to_user_id"` // target user
 	Payload  json.RawMessage `json:"payload"`    // opaque; app defines
+}
+
+type GrantSyncSummary struct {
+	MaxTimestamp   int64    `json:"max_ts"`
+	RecentGrantIDs []string `json:"recent_ids,omitempty"`
+}
+
+type GrantSyncRequest struct {
+	SinceTimestamp int64 `json:"since_ts"`
+	Limit          int   `json:"limit"`
+}
+
+type GrantSyncResponse struct {
+	Grants []QuizGrant `json:"grants"`
 }

@@ -1,6 +1,8 @@
 package p2p
 
-import "p2p-park/internal/proto"
+import (
+	"p2p-park/internal/proto"
+)
 
 func (n *Node) addPeer(p *peer) bool {
 	n.mu.Lock()
@@ -16,19 +18,27 @@ func (n *Node) addPeer(p *peer) bool {
 	return true
 }
 
+func deleteIfSame(m map[string]*peer, key string, p *peer) {
+	if m == nil || key == "" || p == nil {
+		return
+	}
+	if cur, ok := m[key]; ok && cur == p {
+		delete(m, key)
+	}
+}
+
 func (n *Node) removePeer(id string) {
 	var p *peer
+	var uid string
 
 	n.mu.Lock()
 	p = n.peers[id]
 	if p != nil {
 		delete(n.peers, id)
+		uid = p.userID
 
-		if p.userID != "" {
-			if cur := n.natByUserID[p.userID]; cur == p {
-				delete(n.natByUserID, p.userID)
-			}
-		}
+		deleteIfSame(n.natByUserID, uid, p)
+		deleteIfSame(n.peersByUserID, uid, p)
 	}
 	n.mu.Unlock()
 
@@ -36,14 +46,11 @@ func (n *Node) removePeer(id string) {
 		return
 	}
 
-	// Make removal idempotent
 	p.once.Do(func() {
 		if p.cancel != nil {
 			p.cancel()
 		}
-
 		_ = p.conn.Close()
-
 		n.emit(Event{Type: EventPeerDisconnected, PeerID: p.id, PeerAddr: string(p.addr), PeerName: p.name})
 	})
 }
@@ -148,4 +155,13 @@ func (n *Node) SnapshotPeers() []PeerSnapshot {
 		out = append(out, ps)
 	}
 	return out
+}
+
+func (n *Node) UserIDForPeer(peerID string) string {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	if p := n.peers[peerID]; p != nil {
+		return p.userID
+	}
+	return ""
 }

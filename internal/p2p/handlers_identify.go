@@ -36,6 +36,7 @@ func (n *Node) handleIdentify(p *peer, env proto.Envelope) {
 	if len(ident.UserPub) == ed25519.PublicKeySize {
 		p.userPub = ed25519.PublicKey(ident.UserPub)
 		p.userID = hex.EncodeToString(ident.UserPub)
+		n.peersByUserID[p.userID] = p
 	}
 	n.mu.Unlock()
 
