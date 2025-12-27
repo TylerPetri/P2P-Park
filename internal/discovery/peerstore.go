@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
+	"p2p-park/internal/appdata"
 	"sync"
 	"time"
 )
@@ -23,11 +23,7 @@ type PeerStore struct {
 }
 
 func DefaultPeerStorePath() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		home = "."
-	}
-	return filepath.Join(home, ".p2p-park-peers.json")
+	return appdata.Path("peers.json")
 }
 
 func NewPeerStore(path string) *PeerStore {

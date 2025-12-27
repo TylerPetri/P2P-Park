@@ -11,7 +11,18 @@ import (
 )
 
 func (a *App) handleEnvelope(env proto.Envelope) {
-	if env.Type != proto.MsgGossip {
+	switch env.Type {
+	case proto.MsgGossip:
+	case proto.MsgGrantSyncSummary:
+		a.handleGrantSyncSummary(env)
+		return
+	case proto.MsgGrantSyncRequest:
+		a.handleGrantSyncRequest(env)
+		return
+	case proto.MsgGrantSyncResponse:
+		a.handleGrantSyncResponse(env)
+		return
+	default:
 		return
 	}
 
@@ -132,11 +143,10 @@ func (a *App) handleQuiz(env proto.Envelope, g proto.Gossip) {
 		}
 		g := *qw.Grant
 
-		// ApplyGrant is your dedup gate. Only relay if this is the first time we've seen it.
 		if a.Ledger.ApplyGrant(g) {
-			// Relay with stable ID so the whole network converges.
-			// Use the original body we just parsed so we don't re-encode inconsistently.
-			// (But ensure Gossip.ID is stable.)
+			if a.GrantStore != nil {
+				_, _ = a.GrantStore.Put(g)
+			}
 
 			wire := proto.QuizWire{Kind: "grant", Grant: &g}
 			body, _ := json.Marshal(wire)
@@ -172,7 +182,6 @@ func (a *App) handleEncrypted(env proto.Envelope, g proto.Gossip) {
 	key, ok := a.encChannels[chName]
 	a.encMu.RUnlock()
 	if !ok {
-		// Not joined; ignore.
 		return
 	}
 
@@ -188,7 +197,6 @@ func (a *App) handleEncrypted(env proto.Envelope, g proto.Gossip) {
 		return
 	}
 
-	// plaintext is a JSON object we created in sendEncrypted()
 	var payload map[string]any
 	if err := json.Unmarshal(pt, &payload); err != nil {
 		a.ui.Printf("[enc:%s] %s\n", chName, string(pt))

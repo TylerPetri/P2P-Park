@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -16,7 +17,9 @@ import (
 	"p2p-park/internal/discovery"
 	"p2p-park/internal/netx"
 	"p2p-park/internal/p2p"
+	"p2p-park/internal/paths"
 	"p2p-park/internal/proto"
+	"p2p-park/internal/storage/grantsbolt"
 	"p2p-park/internal/telemetry"
 )
 
@@ -34,7 +37,8 @@ type App struct {
 	Points *points.Engine
 
 	// Grant-based scoring (quiz awards)
-	Ledger *grants.Ledger
+	Ledger     *grants.Ledger
+	GrantStore grants.Store
 
 	// Quiz engine
 	Quiz *quiz.Engine
@@ -67,6 +71,25 @@ func New(cfg Config, logger *log.Logger) (*App, error) {
 	pe := points.NewEngine(cfg.Name, id.SignPriv, id.SignPub)
 	qe := quiz.NewEngine(cfg.Name, id.SignPriv, id.SignPub)
 	ld := grants.NewLedger()
+
+	// Persistent grant store (BoltDB)
+	dataDir := cfg.DataDir
+	if dataDir == "" {
+		dataDir = paths.DefaultDataDir()
+	}
+	if dir, err := paths.EnsureDir(dataDir); err == nil {
+		dataDir = dir
+	}
+	dbPath := filepath.Join(dataDir, "grants.bolt")
+	gs, err := grantsbolt.Open(dbPath)
+	if err != nil {
+		return nil, err
+	}
+	// Replay persisted grants into the in-memory ledger.
+	_ = gs.LoadAll(func(g proto.QuizGrant) error {
+		ld.ApplyGrant(g)
+		return nil
+	})
 	ld.NoteName(hex.EncodeToString(id.SignPub), cfg.Name)
 
 	return &App{
@@ -78,6 +101,7 @@ func New(cfg Config, logger *log.Logger) (*App, error) {
 		Points:      pe,
 		Quiz:        qe,
 		Ledger:      ld,
+		GrantStore:  gs,
 		encChannels: make(map[string]channel.ChannelKey),
 		otherPoints: make(map[string]proto.PointsSnapshot),
 	}, nil
@@ -118,6 +142,7 @@ func (a *App) Run(ctx context.Context) error {
 			switch ev.Type {
 			case p2p.EventPeerConnected:
 				a.ui.Printf("[NET] peer connected: %s (%s)\n", ev.PeerName, ev.PeerAddr)
+				go a.initiateGrantSync(ev.PeerID)
 			case p2p.EventPeerDisconnected:
 				a.ui.Printf("[NET] peer disconnected: %s\n", ev.PeerID)
 			}
@@ -146,6 +171,9 @@ func (a *App) StopAll() {
 		close(a.stopLAN)
 	}
 	a.Node.Stop()
+	if a.GrantStore != nil {
+		_ = a.GrantStore.Close()
+	}
 }
 
 func (a *App) logf(format string, args ...any) {

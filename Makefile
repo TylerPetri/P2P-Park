@@ -6,7 +6,7 @@ NAME=Ian
 TEST_DIR=./internal/dht
 
 run:
-	@go run ./cmd/park-node -name ${NAME}
+	@go run ./cmd/park-node -name ${NAME} -data ~/.p2p-park-${NAME}
 
 bootstrap:
 	@go run ./cmd/park-node -name ${NAME} -bootstrap ${LOCAL}${ADDR}

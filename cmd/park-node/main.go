@@ -19,6 +19,7 @@ func main() {
 	seed := flag.Bool("seed", false, "run as SeedNode (rendezvous/relay)")
 	bootstrapStr := flag.String("bootstrap", "", "comma-separated bootstrap addresses host:port")
 	debug := flag.Bool("debug", false, "enable debug logs")
+	dataDir := flag.String("data", "", "data directory for persistent state (default: user config dir)")
 	flag.Parse()
 
 	var bootstraps []netx.Addr
@@ -34,6 +35,7 @@ func main() {
 	logger := log.New(os.Stdout, "", log.LstdFlags)
 
 	app, err := parknode.New(parknode.Config{
+		DataDir:    *dataDir,
 		Name:       *name,
 		Bind:       *bind,
 		IsSeed:     *seed,

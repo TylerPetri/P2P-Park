@@ -1,8 +1,6 @@
 package grants
 
 import (
-	"crypto/ed25519"
-	"encoding/hex"
 	"sort"
 	"sync"
 	"time"
@@ -53,24 +51,7 @@ func (l *Ledger) NoteName(peerID, name string) {
 // ApplyGrant verifies and applies a grant.
 // Returns true if it was new and changed totals.
 func (l *Ledger) ApplyGrant(g proto.QuizGrant) bool {
-	if g.GrantID == "" || g.QuizID == "" || g.GrantorID == "" || g.RecipientID == "" {
-		return false
-	}
-	if g.Points == 0 {
-		return false
-	}
-	// expiry window: ignore absurd timestamps
-	now := time.Now().Unix()
-	if g.Timestamp > now+60 || g.Timestamp < now-60*60*24*7 {
-		return false
-	}
-	// verify signature
-	pubBytes, err := hex.DecodeString(g.GrantorID)
-	if err != nil || len(pubBytes) != ed25519.PublicKeySize {
-		return false
-	}
-	msg, _ := proto.EncodeQuizGrantCanonical(g)
-	if !ed25519.Verify(ed25519.PublicKey(pubBytes), msg, g.Signature) {
+	if err := VerifyGrant(g); err != nil {
 		return false
 	}
 

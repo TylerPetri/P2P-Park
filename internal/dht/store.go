@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
+	"p2p-park/internal/appdata"
 	"sort"
 	"sync"
 	"time"
@@ -22,15 +22,11 @@ type nodeRecord struct {
 type Store struct {
 	path  string
 	mu    sync.RWMutex
-	nodes map[string]*nodeRecord // key: NodeID
+	nodes map[string]*nodeRecord
 }
 
 func DefaultStorePath() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		home = "."
-	}
-	return filepath.Join(home, ".p2p-park-dht.json")
+	return appdata.Path("dht.json")
 }
 
 func NewStore(path string) *Store {
