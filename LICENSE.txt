@@ -1,0 +1,22 @@
+Copyright © 2026 Tyler Petri. All rights reserved.
+
+This software and its associated source code, documentation, and other
+materials (collectively, the "Software") are the exclusive property of
+Tyler Petri.
+
+This Software is proprietary and confidential. No permission is granted,
+express or implied, to use, copy, modify, merge, publish, distribute,
+sublicense, sell, or create derivative works of the Software, in whole or
+in part, without prior written permission from the copyright holder.
+
+The Software is provided for evaluation, review, and demonstration purposes
+only. Any unauthorized use of the Software is strictly prohibited.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF,
+OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
