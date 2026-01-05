@@ -11,7 +11,7 @@ P2P-Park is a fully decentralized P2P network where nodes automatically discover
 ## Highlights
 
 ### 🔐 Real cryptography
-X3DH-style handshake · Noise encryption · XChaCha20-Poly1305 · signed identities
+Noise encryption · XChaCha20-Poly1305 · signed identities
 
 ### 🌐 True P2P
 Automatic discovery · direct peer connections · no client/server split
